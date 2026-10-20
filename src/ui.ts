@@ -97,7 +97,7 @@ function editCell(cell: HTMLElement): void {
     if (!cancelled && target[field]!==input.value) { target[field]=input.value; changed(); }
     renderContent();
   };
-  input.addEventListener('keydown',e=>{
+  input.addEventListener('keydown',(event)=>{const e=event as KeyboardEvent;
     if(e.key==='Escape') {cancelled=true;input.blur();}
     else if(e.key==='Enter' && !multiline) {e.preventDefault();input.blur();}
     else if(e.key==='Enter' && multiline && ['overview','updates','notes'].includes(field) && !e.shiftKey && !e.ctrlKey) {
