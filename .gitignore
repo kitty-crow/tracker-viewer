@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+public/latest-tracker.xlsx
+public/tracker-manifest.json
+*.log
+.DS_Store
