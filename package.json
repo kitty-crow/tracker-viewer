@@ -7,8 +7,15 @@
     "dev": "node scripts/stage-latest.mjs && vite --host 127.0.0.1",
     "build": "node scripts/stage-latest.mjs && tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "start": "node server.mjs",
+    "serve": "node server.mjs"
   },
-  "dependencies": { "exceljs": "^4.4.0" },
-  "devDependencies": { "typescript": "^5.8.3", "vite": "^8.3.4" }
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vite": "^8.3.4"
+  }
 }
