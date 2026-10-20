@@ -40,3 +40,43 @@ html{scroll-behaviour:smooth;scroll-padding-top:90px}
 .toast{transition:opacity .22s}
 @media(max-width:1300px){.meeting-layout{grid-template-columns:1fr}.agenda-table td:nth-child(2){min-width:220px!important}}
 @media(max-width:760px){.meeting-layout{padding:12px}.meeting-grid{grid-template-columns:1fr}.meeting-pair:has(.cell-editor){grid-column:auto}.topbar{flex-wrap:wrap}.section-heading{align-items:start}.agenda-table{min-width:520px}.data-table thead{top:0}}
+
+/* Predictable geometry for edits: overlays never participate in table or meeting grid sizing. */
+.meeting-pair:has(.cell-editor){grid-column:auto}
+.meeting-pair [data-field], .data-table td[data-field], .agenda-field {position:relative;min-width:0}
+.meeting-pair [data-field].editing, .data-table td[data-field].editing, .agenda-field.editing {z-index:5}
+.editing .cell-editor, .meeting-pair .cell-editor, .data-table .cell-editor, .agenda-field .cell-editor {
+  box-sizing:border-box; position:absolute; left:0;top:0;width:100%;max-width:100%;
+  min-width:0!important;min-height:0;height:100%;margin:0;z-index:8;
+  border:1px solid #428cea;border-radius:6px;background:white;resize:none;
+  box-shadow:0 3px 12px #16375d2a;overflow:auto;font-size:inherit;
+}
+.editing textarea.cell-editor, .data-table textarea.cell-editor, .agenda-field textarea.cell-editor {
+  height:clamp(94px, 16vh, 176px);min-height:0;max-height:176px;
+}
+.meeting-pair .editing textarea.cell-editor{height:clamp(60px, 11vh, 126px)}
+.agenda-list{min-width:0;display:flex;flex-direction:column;gap:7px}
+.agenda-row{display:grid;grid-template-columns:32px minmax(0,1fr) 84px 65px 62px;align-items:start;gap:10px;padding:12px;
+  border:1px solid #e1e8f3;border-radius:9px;background:#fbfcfe;color:#29445f;font-size:12px;line-height:1.5}
+.agenda-row:nth-child(odd):not(.agenda-row-head){background:#f0f5fc}
+.agenda-row-head{border:0;border-radius:0;background:#edf3fa!important;padding:8px 12px;text-transform:uppercase;letter-spacing:.04em;color:#647f9e;font-size:10px;font-weight:800}
+.agenda-field{min-height:21px;overflow-wrap:anywhere;white-space:pre-wrap;cursor:text}
+.agenda-topic{font-weight:600;color:#233e5a;line-height:1.55}
+.agenda-controls{display:flex;justify-content:flex-end;gap:4px}
+.agenda-row.row-urgent{background:#fff0f2!important;border-color:#f2b9c0;color:#c02a43}
+.agenda-row.row-urgent .agenda-topic{color:#c02a43}
+.agenda-row .icon-button{height:26px;min-width:26px}
+/* Do not pin headers to a nonexistent top offset. They belong in their own tables. */
+.data-table thead{position:static!important;top:auto!important}
+.data-table{table-layout:fixed;min-width:1587px;max-width:none}
+.data-table th,.data-table td{min-width:0!important;max-width:none!important;overflow-wrap:anywhere}
+.data-table td.note-cell{min-width:0!important;width:auto;max-width:none!important}
+.data-table .row-actions{min-width:0!important;max-width:none!important;width:auto}
+.misc-table{min-width:950px}
+.table-region{overflow-x:auto;overflow-y:visible}
+.meeting-layout{grid-template-columns:minmax(0,1fr) minmax(0,.94fr)}
+.agenda-container{overflow:visible}
+#runtime-update[hidden]{display:none}
+#runtime-update{max-width:300px;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:1450px){.meeting-layout{grid-template-columns:1fr}.agenda-row{grid-template-columns:35px minmax(0,1fr) 105px 75px 68px}}
+@media(max-width:760px){.agenda-row{grid-template-columns:26px minmax(0,1fr) 68px 56px 60px;gap:6px;padding:9px;font-size:11px}.agenda-row-head{font-size:9px}}

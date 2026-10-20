@@ -20,13 +20,21 @@ The workbook displays as one continuous page. Sidebar links jump to Meeting & Ag
 
 The **+ New sheet** action clones the previous weekly sheet, retaining its projects and notes, while advancing the meeting date seven days. Each week's data remains independently editable. **Export Excel** downloads a workbook containing a separate Excel worksheet for each week, including the meeting agenda. Styling and urgency flags survive the export. The application does not require Excel formulas.
 
-## Auto-save and loading
+## Live workbook discovery (no rebuild required)
 
-The **Auto-save** slider is enabled by default. It automatically saves the current editable workspace in this browser's IndexedDB after changes, and restores it on the next visit. This is **browser draft storage, not an automatic overwrite of the original Excel file**. Export Excel to create an `.xlsx` copy or share a workbook. Disabling auto-save leaves existing drafts intact but stops subsequent draft writes.
+Place trackers directly in `./public`, or configure a different folder in `.env` beside the project (or next to the EXE):
 
-Open an Excel workbook using **Open file**, or **Connect folder** using Chrome/Edge. The authorised browser folder lets **Latest** find the newest workbook without rebuilding. Browser permissions are needed for direct folder access. To load the latest workbook on each build, copy `.env.example` to `.env` and configure `TRACKER_FOLDER` on the build computer. The build script stages the latest `.xlsx` in `dist/`. That same snapshot is embedded in the compiled Windows EXE. If a saved browser draft exists, it is restored preferentially to protect changes.
+```env
+TRACKER_FOLDER="./public"
+```
 
-**Confidentiality:** embedding the tracker in the website or executable includes the actual workbook bytes. Do not publish or distribute builds containing sensitive workbooks. Leave `TRACKER_FOLDER` empty to use user-authorised file opening without embedding data.
+The local server scans the folder **when the application starts**, whenever you click **Latest**, and every 30 seconds while open. It selects the `.xlsx` workbook with the newest file modification timestamp, ignoring Excel lockfiles starting with `~$` and the old bundled `latest-tracker.xlsx` file. It does not use dates embedded in the filenames. **Adding a workbook does not require another build.** The development server, production `.mts` server and Windows EXE use the same runtime scanner. The EXE will also find `../public` when running from the repository's `release` directory.
+
+When a new workbook appears, the viewer opens it automatically if the workspace is empty or is showing an unchanged runtime tracker. If there are active edits or a restored auto-save draft, the viewer instead displays a **Newest** button to protect the existing work. Click it to confirm switching. The server listens only on `127.0.0.1`.
+
+The **Auto-save** slider is enabled by default and saves an editable draft to browser IndexedDB. It does **not** overwrite the source Excel file. Drafts are restored across page reloads, taking precedence over loading a different workbook without confirmation. Export Excel creates a new `.xlsx` file. **Connect folder** remains available for opening a browser-authorised folder manually.
+
+For an entirely static deployment without the Node local server, the build-time workbook snapshot is a fallback. **Confidentiality:** a staged tracker is included in static build files and in the EXE; do not distribute such builds containing sensitive information. Leave the folder empty when building an executable intended for distribution, and point it at a folder when running it instead.
 
 ## Structure
 
@@ -42,6 +50,7 @@ Open an Excel workbook using **Open file**, or **Connect folder** using Chrome/E
 - `server.mts`: minimal TypeScript static server for `npm start`
 - `scripts/standalone.cjs`: browser-opening embedded server runtime used by Node SEA
 - `scripts/build-exe.mjs`: Windows Node SEA executable packaging
-- `scripts/stage-latest.mjs`: build-time `.env` tracker discovery
+- `scripts/runtime-tracker.cjs`: shared live local-folder discovery and HTTP endpoints
+- `scripts/stage-latest.mjs`: optional build-time snapshot fallback
 
 The application serves only on `127.0.0.1` by default. Override with a valid TCP port using `PORT` if needed.

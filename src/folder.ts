@@ -1,7 +1,26 @@
 const DB = 'tracker-viewer-folders';
 const STORE = 'settings';
 const KEY = 'directory';
-export interface FolderSelection { file: File; label: string }
+export interface FolderSelection { file: File; label: string; signature?: string }
+export interface RuntimeManifest { filename: string; modified: number; size: number; signature: string; folder: string }
+/** Queries the local server afresh, rather than inspecting a build-time snapshot. */
+export async function runtimeManifest(): Promise<RuntimeManifest | null> {
+  const reply = await fetch('./__tracker/manifest', { cache: 'no-store' });
+  if (reply.status === 404) return null;
+  if (!reply.ok) throw new Error(`Tracker folder scan failed (${reply.status}).`);
+  return await reply.json() as RuntimeManifest;
+}
+export async function loadRuntimeLatest(manifest?: RuntimeManifest): Promise<FolderSelection | null> {
+  const current = manifest ?? await runtimeManifest();
+  if (!current) return null;
+  const response = await fetch('./__tracker/latest.xlsx', { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Could not open latest workbook (${response.status}).`);
+  const bytes = await response.blob();
+  return { file: new File([bytes], current.filename, {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', lastModified: current.modified
+  }), label: `live folder: ${current.folder}`, signature: current.signature };
+}
+
 function database(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB, 1);

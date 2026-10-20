@@ -9,7 +9,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "start": "node --experimental-strip-types server.mts",
-    "serve": "node --experimental-strip-types server.mts"
+    "serve": "node --experimental-strip-types server.mts",
+    "test": "node --test scripts/runtime-tracker.test.cjs"
   },
   "dependencies": {
     "exceljs": "^4.4.0"
@@ -17,6 +18,7 @@
   "devDependencies": {
     "typescript": "^5.8.3",
     "vite": "^8.3.4",
-    "postject": "^1.0.0-alpha.6"
+    "postject": "^1.0.0-alpha.6",
+    "@types/node": "^22.15.30"
   }
 }

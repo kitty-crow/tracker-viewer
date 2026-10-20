@@ -26,12 +26,12 @@
         <section class="page-heading"><div><div class="eyebrow">WEEKLY PROJECT TRACKER</div><h1 id="page-title">Projects & enquiries</h1><p id="page-subtitle">Edit cells directly, manage notes, and create the next weekly tracker.</p></div></section>
         <section class="source-bar" aria-label="Source workbook">
           <div class="source-description"><span class="source-icon">▣</span><div><strong id="source-title">No workbook loaded</strong><small id="source-path">Open an .xlsx tracker or connect a folder to begin.</small></div></div>
-          <div class="source-actions"><button id="open-btn" class="button">↥ Open file</button><button id="folder-btn" class="button">▤ Connect folder</button><button id="refresh-btn" class="button" title="Load the newest workbook">↻ Latest</button></div>
+          <div class="source-actions"><button id="open-btn" class="button">↥ Open file</button><button id="folder-btn" class="button">▤ Connect folder</button><button id="refresh-btn" class="button" title="Load the newest workbook">↻ Latest</button><button id="runtime-update" type="button" class="button button-primary" hidden></button></div>
           <input id="file-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
         </section>
-        <div class="sheet-switcher"><div id="sheet-tabs" class="sheet-tabs" aria-label="Weekly sheets"></div><button id="new-sheet" class="button button-primary">+ New sheet</button></div>
+        <div class="sheet-switcher"><div id="sheet-tabs" class="sheet-tabs" aria-label="Weekly sheets"></div></div>
         <section id="meeting" class="content-section meeting-section" aria-label="Meeting details and agenda">
-          <div class="section-heading"><div><span class="eyebrow">MEETING</span><h2>Meeting details & agenda</h2></div><div class="section-actions"><button class="button" id="meeting-add">+ Field</button><button class="button" id="agenda-add">+ Agenda item</button></div></div>
+          <div class="section-heading"><div><span class="eyebrow">MEETING</span><h2>Meeting details & agenda</h2></div><div class="section-actions"><button class="button" id="meeting-add">+ Field</button><button class="button" id="agenda-add">+ Agenda item</button><button id="new-sheet" class="button button-primary">+ New sheet</button></div></div>
           <div class="meeting-layout"><div class="meeting-grid" id="meeting-fields"></div><div class="agenda-container"><div class="mini-heading">Agenda</div><div class="table-region" id="agenda-table"></div></div></div>
         </section>
         <section class="statistics" id="stats" aria-label="Tracker summary"></section>

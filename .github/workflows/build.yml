@@ -15,7 +15,30 @@ jobs:
           node-version: '22'
       - run: npm install
       - run: npm run build
+      - run: npm test
       - run: node --check scripts/standalone.cjs
+      - name: Verify runtime folder discovery on Windows EXE
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # The workbook appears only AFTER the executable has already been built.
+          # This must succeed without rebuilding or restarting the EXE.
+          $path = 'public/DiscoveredAtRuntime.xlsx'
+          Set-Content -Path $path -Value 'runtime test workbook' -NoNewline
+          $process = Start-Process -FilePath './release/TrackerViewer.exe' -PassThru -WindowStyle Hidden
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 20; $i++) {
+              Start-Sleep -Seconds 1
+              try {
+                $reply = Invoke-RestMethod -Uri 'http://127.0.0.1:59413/__tracker/manifest' -TimeoutSec 2
+                if ($reply.filename -eq 'DiscoveredAtRuntime.xlsx') { $ready = $true; break }
+              } catch {}
+            }
+            if (!$ready) { throw 'Windows EXE failed to discover a workbook added after packaging' }
+            $bytes = Invoke-WebRequest -Uri 'http://127.0.0.1:59413/__tracker/latest.xlsx' -UseBasicParsing
+            if ($bytes.StatusCode -ne 200) { throw 'Runtime workbook cannot be downloaded' }
+          } finally { Stop-Process -Id $process.Id -ErrorAction SilentlyContinue; Remove-Item $path -ErrorAction SilentlyContinue }
       - name: Check Windows executable
         if: runner.os == 'Windows'
         shell: pwsh

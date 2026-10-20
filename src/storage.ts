@@ -4,7 +4,7 @@ const DB = 'tracker-viewer-workspace';
 const STORE = 'drafts';
 const SNAPSHOT = 'latest';
 const OPTION = 'tracker-viewer-autosave';
-export interface Snapshot { sheets: Tracker[]; activeSheet: number; loadingFrom: string; }
+export interface Snapshot { sheets: Tracker[]; activeSheet: number; loadingFrom: string; sourceSignature?: string | null; }
 export function autosavePreference(): boolean {
   try { return localStorage.getItem(OPTION) !== 'false'; } catch { return true; }
 }
@@ -34,7 +34,7 @@ export async function restoreDraft(): Promise<Snapshot | null> {
   });
 }
 export async function saveDraft(): Promise<void> {
-  const snapshot: Snapshot = structuredClone({ sheets: state.sheets, activeSheet: state.activeSheet, loadingFrom: state.loadingFrom });
+  const snapshot: Snapshot = structuredClone({ sheets: state.sheets, activeSheet: state.activeSheet, loadingFrom: state.loadingFrom, sourceSignature: state.sourceSignature });
   const database = await db();
   return new Promise((resolve, reject) => {
     const tx = database.transaction(STORE, 'readwrite');

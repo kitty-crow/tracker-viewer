@@ -5,10 +5,12 @@ const { extname, posix } = require('node:path');
 const { spawn } = require('node:child_process');
 const port = Number(process.env.PORT || 59413);
 const host = '127.0.0.1';
+const runtime = null /*__RUNTIME_HELPER__*/;
 const mime = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpeg':'image/jpeg','.jpg':'image/jpeg','.ico':'image/x-icon','.woff2':'font/woff2','.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'};
 if(!Number.isInteger(port)||port<1||port>65535)throw new Error('PORT must be between 1 and 65535');
 const assets = new Set(JSON.parse(sea.getAsset('__asset-index.json', 'utf8')));
 const server = http.createServer((request,response)=>{
+  if (runtime.handleRequest(request,response,{exeDir:require('node:path').dirname(process.execPath)})) return;
   if(request.method!=='GET'&&request.method!=='HEAD'){response.writeHead(405).end();return;}
   let key;
   try {

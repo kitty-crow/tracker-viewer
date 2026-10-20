@@ -3,15 +3,15 @@ export interface Filter { id: number; field: Field | 'description' | 'notes' | '
 export interface State {
   tracker: Tracker; sheets: Tracker[]; activeSheet: number; section: Section | 'meeting';
   filters: Filter[]; query: string; sort: { field: Field | 'description' | 'notes'; descending: boolean } | null;
-  selectedId: string | null; dirty: boolean; busy: boolean; loadingFrom: string; autosave: boolean;
+  selectedId: string | null; dirty: boolean; busy: boolean; loadingFrom: string; autosave: boolean; sourceSignature: string | null;
 }
 const initial = blankTracker();
-export const state: State = { tracker: initial, sheets: [initial], activeSheet: 0, section: 'projects', filters: [], query: '', sort: null, selectedId: null, dirty: false, busy: false, loadingFrom: '', autosave: true };
-export function setTrackers(trackers: Tracker[], from: string, activeSheet = trackers.length - 1): void {
+export const state: State = { tracker: initial, sheets: [initial], activeSheet: 0, section: 'projects', filters: [], query: '', sort: null, selectedId: null, dirty: false, busy: false, loadingFrom: '', autosave: true, sourceSignature: null };
+export function setTrackers(trackers: Tracker[], from: string, activeSheet = trackers.length - 1, signature: string | null = null): void {
   if (!trackers.length) trackers = [blankTracker()];
   state.sheets = trackers; state.activeSheet = Math.max(0, Math.min(activeSheet, trackers.length - 1));
   state.tracker = trackers[state.activeSheet]; state.section = 'projects';
-  state.query = ''; state.filters = []; state.sort = null; state.selectedId = null; state.dirty = false; state.loadingFrom = from;
+  state.query = ''; state.filters = []; state.sort = null; state.selectedId = null; state.dirty = false; state.loadingFrom = from; state.sourceSignature = signature;
 }
 export function selectSheet(index: number): void {
   if (index < 0 || index >= state.sheets.length) return;

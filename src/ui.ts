@@ -75,7 +75,7 @@ function bindEditable(root: Element): void {
   root.querySelectorAll<HTMLElement>('[data-field]').forEach(cell => cell.onclick = () => editCell(cell));
 }
 function editCell(cell: HTMLElement): void {
-  if (cell.querySelector('input,textarea')) return;
+  if (cell.classList.contains('editing')) return;
   const field = cell.dataset.field!;
   const meetingIndex = cell.closest<HTMLElement>('[data-meeting]')?.dataset.meeting;
   const agendaId = cell.closest<HTMLElement>('[data-agenda]')?.dataset.agenda;
@@ -90,10 +90,11 @@ function editCell(cell: HTMLElement): void {
   if (input instanceof HTMLInputElement) input.type = 'text';
   input.className = 'cell-editor'; input.value = original;
   input.setAttribute('aria-label',`Edit ${field}`);
-  if (input instanceof HTMLTextAreaElement) input.rows = Math.max(2, Math.min(12, lines(original).length+1));
+  if (input instanceof HTMLTextAreaElement) input.rows = Math.max(2, Math.min(8, lines(original).length+1));
   let cancelled = false;
   const finish = () => {
     if (!cell.contains(input)) return;
+    cell.classList.remove('editing');
     if (!cancelled && target[field]!==input.value) { target[field]=input.value; changed(); }
     renderContent();
   };
@@ -104,7 +105,9 @@ function editCell(cell: HTMLElement): void {
       e.preventDefault(); input.setRangeText('\n• ',input.selectionStart ?? 0,input.selectionEnd ?? 0,'end');
     }
   });
-  input.addEventListener('blur',finish,{once:true}); cell.replaceChildren(input); input.focus(); if(!multiline) input.select();
+  input.addEventListener('blur',finish,{once:true});
+  // Overlay the editor instead of replacing the cell content. Table/grid geometry is unchanged.
+  cell.classList.add('editing'); cell.append(input); input.focus(); if(!multiline) input.select();
 }
 function renderMeeting(): void {
   $('#meeting-fields').innerHTML = state.tracker.meeting.map((item,i)=>`<div class="meeting-pair" data-meeting="${i}"><label data-field="label">${html(item.label)}</label><div class="meeting-value" data-field="value">${html(item.value)||'<span class="empty-cell">Edit</span>'}</div><button class="icon-button delete" title="Delete field" data-delete-meeting="${i}">×</button></div>`).join('');
@@ -113,7 +116,7 @@ function renderMeeting(): void {
   });
   bindEditable($('#meeting-fields'));
   const fields: [keyof AgendaItem,string][] = [['number','No'],['topic','Topic'],['attendee','Attendee'],['time','Time allocated']];
-  $('#agenda-table').innerHTML = `<table class="data-table agenda-table"><thead><tr>${fields.map(([,label])=>`<th>${label}</th>`).join('')}<th>Actions</th></tr></thead><tbody>${state.tracker.agenda.map(a=>`<tr data-agenda="${a.id}" class="${a.urgent?'row-urgent':''}">${fields.map(([field])=>`<td data-field="${field}">${html(a[field])||'<span class="empty-cell">Edit</span>'}</td>`).join('')}<td class="row-actions"><div class="row-action-buttons"><button class="icon-button ${a.urgent?'selected-urgent':''}" data-agenda-action="urgent" title="Toggle urgency">!</button><button class="icon-button delete" data-agenda-action="delete" title="Delete agenda item">×</button></div></td></tr>`).join('')}</tbody></table>`;
+  $('#agenda-table').innerHTML = `<div class="agenda-list" role="list" aria-label="Agenda items"><div class="agenda-row agenda-row-head" aria-hidden="true"><span>No</span><span>Topic</span><span>Attendee</span><span>Time</span><span></span></div>${state.tracker.agenda.map(a=>`<div role="listitem" class="agenda-row ${a.urgent?'row-urgent':''}" data-agenda="${html(a.id)}">${fields.map(([field])=>`<div class="agenda-field agenda-${field}" data-field="${field}" title="Click to edit ${field}">${html(a[field])||'<span class="empty-cell">Edit</span>'}</div>`).join('')}<div class="agenda-controls"><button class="icon-button ${a.urgent?'selected-urgent':''}" data-agenda-action="urgent" title="Toggle urgency" aria-label="Mark agenda item urgent">!</button><button class="icon-button delete" data-agenda-action="delete" title="Delete agenda item" aria-label="Delete agenda item">×</button></div></div>`).join('')}</div>`;
   bindEditable($('#agenda-table'));
   $('#agenda-table').querySelectorAll<HTMLButtonElement>('[data-agenda-action]').forEach(button=>button.onclick=()=>{
     const row = button.closest<HTMLElement>('[data-agenda]'); const item = state.tracker.agenda.find(a=>a.id===row?.dataset.agenda);
@@ -127,7 +130,9 @@ function renderMeeting(): void {
 function renderTable(section: Section): void {
   const items=visible(section); const fields=section==='misc'?['description','notes']:[...FIELDS];
   const columns=fields.map(f=>`<th><button class="sort-button" data-sort="${f}">${f==='description'?'Description':f==='notes'?'Notes':HEADERS[f as Field]}${state.sort?.field===f?(state.sort.descending?' ↓':' ↑'):''}</button></th>`).join('');
-  $(`#${section}-table`).innerHTML=`<table class="data-table ${section==='misc'?'misc-table':''}"><thead><tr>${columns}<th class="actions-heading">Actions</th></tr></thead><tbody>${items.map(rowMarkup).join('')}</tbody></table>${items.length?'':'<div class="empty-state">No matching items</div>'}`;
+  const cols = section === 'misc' ? [260, 580, 110] : [70, 120, 110, 115, 190, 140, 340, 390, 112];
+  const groups = `<colgroup>${cols.map(w => `<col style="width:${w}px">`).join('')}</colgroup>`;
+  $(`#${section}-table`).innerHTML=`<table class="data-table ${section==='misc'?'misc-table':''}">${groups}<thead><tr>${columns}<th class="actions-heading">Actions</th></tr></thead><tbody>${items.map(rowMarkup).join('')}</tbody></table>${items.length?'':'<div class="empty-state">No matching items</div>'}`;
   $(`#${section}-count`).textContent=`${items.length} of ${sectionData(section).length}`;
   const table=$(`#${section}-table`);
   bindEditable(table);

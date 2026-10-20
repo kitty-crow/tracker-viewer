@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 const root=resolve(import.meta.dirname,'..');
@@ -9,9 +9,14 @@ const output=join(root,'release');const temp=join(root,'.sea');mkdirSync(output,
 function collect(dir){return readdirSync(dir,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?collect(join(dir,entry.name)):[join(dir,entry.name)]);}
 const assets=Object.fromEntries(collect(join(root,'dist')).map(file=>[relative(join(root,'dist'),file).replaceAll('\\','/'),file]));
 const assetIndex=join(temp,'asset-index.json');writeFileSync(assetIndex,JSON.stringify(Object.keys(assets)));assets['__asset-index.json']=assetIndex;
+const helper = readFileSync(join(root,'scripts','runtime-tracker.cjs'),'utf8');
+const original = readFileSync(join(root,'scripts','standalone.cjs'),'utf8');
+const injected = original.replace('null /*__RUNTIME_HELPER__*/', `(function(){const module={exports:{}};${helper}\nreturn module.exports;})()`);
+if(injected===original)throw new Error('Missing embedded runtime helper marker');
+const packagedServer=join(temp,'standalone-generated.cjs');writeFileSync(packagedServer,injected);
 const blob=join(temp,'tracker.blob');
 const config=join(temp,'sea-config.json');
-writeFileSync(config,JSON.stringify({main:join(root,'scripts','standalone.cjs'),output:blob,disableExperimentalSEAWarning:true,useCodeCache:false,useSnapshot:false,assets},null,2));
+writeFileSync(config,JSON.stringify({main:packagedServer,output:blob,disableExperimentalSEAWarning:true,useCodeCache:false,useSnapshot:false,assets},null,2));
 function run(command,args){const child=spawnSync(command,args,{cwd:root,stdio:'inherit',shell:false});if(child.status!==0)throw new Error(`${command} failed with exit code ${child.status}`);}
 run(process.execPath,['--experimental-sea-config',config]);
 const target=join(output,'TrackerViewer.exe');copyFileSync(process.execPath,target);
