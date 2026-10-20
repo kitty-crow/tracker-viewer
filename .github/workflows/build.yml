@@ -4,26 +4,37 @@ on:
   pull_request:
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: '22'
       - run: npm install
       - run: npm run build
-      - run: node --check server.mjs
-      - name: Smoke-test local server
+      - run: node --check scripts/standalone.cjs
+      - name: Check Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          node server.mjs > /tmp/tracker-server.log 2>&1 &
-          server_pid=$!
-          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
-          for attempt in 1 2 3 4 5; do
-            if curl --fail --silent --show-error http://127.0.0.1:59413/ -o /tmp/tracker-index.html; then
-              grep -qi '<html' /tmp/tracker-index.html
-              exit 0
-            fi
-            sleep 1
-          done
-          cat /tmp/tracker-server.log
-          exit 1
+          if (!(Test-Path release/TrackerViewer.exe)) { throw 'Missing standalone executable' }
+          $process = Start-Process -FilePath './release/TrackerViewer.exe' -PassThru -WindowStyle Hidden
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 20; $i++) {
+              Start-Sleep -Seconds 1
+              try {
+                $reply = Invoke-WebRequest -Uri 'http://127.0.0.1:59413/' -UseBasicParsing -TimeoutSec 2
+                if ($reply.StatusCode -eq 200 -and $reply.Content -match '<html') { $ready = $true; break }
+              } catch {}
+            }
+            if (!$ready) { throw 'The standalone executable did not serve the tracker' }
+          } finally { Stop-Process -Id $process.Id -ErrorAction SilentlyContinue }
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: TrackerViewer-Windows
+          path: release/TrackerViewer.exe

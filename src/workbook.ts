@@ -1,202 +1,232 @@
 import type ExcelJS from 'exceljs';
-import { blankTracker, cleanText, FIELDS, HEADERS, lines, newId, newProject, type Field, type MiscItem, type NoteField, type Project, type Section, type Tracker } from './types';
-
-// ExcelJS is lazy-loaded: the UI and local browsing stay responsive before a workbook is opened.
+import { blankTracker, cleanText, FIELDS, HEADERS, lines, newId, newProject, type AgendaItem, type Field, type MiscItem, type NoteField, type Project, type Section, type Tracker } from './types';
 const getExcel = async () => { const mod = await import('exceljs/dist/exceljs.min.js'); return mod.default ?? mod; };
 const val = (sheet: ExcelJS.Worksheet, row: number, col: number): string => {
-  const cell = sheet.getRow(row).getCell(col);
-  // ExcelJS resolves a merged slave to its master value. Only the anchor is data.
-  if (cell.isMerged && cell.master?.address !== cell.address) return '';
-  return cleanText(cell.value);
+  const c = sheet.getRow(row).getCell(col);
+  if (c.isMerged && c.master?.address !== c.address) return '';
+  return cleanText(c.value);
 };
-const rowText = (sheet: ExcelJS.Worksheet, row: number): string => {
-  const parts: string[] = [];
-  sheet.getRow(row).eachCell({ includeEmpty: false }, cell => parts.push(cleanText(cell.value)));
-  return parts.join(' ').trim();
-};
-const key = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
-const fieldFor = (header: string): Field | undefined => {
-  const h = key(header);
-  const lookup: Record<string, Field> = { priority: 'priority', client: 'client', customer: 'client', country: 'country', location: 'country', projectno: 'projectNo', projectnumber: 'projectNo', jobno: 'projectNo', enquiry: 'projectNo', well: 'well', wellproject: 'well', project: 'well', lead: 'lead', owner: 'lead', overview: 'overview', scope: 'overview', updates: 'updates', update: 'updates', notes: 'updates' };
-  return lookup[h];
-};
-function detectHeader(sheet: ExcelJS.Worksheet): { row: number; cols: Partial<Record<Field, number>> } | null {
-  for (let r = 1; r <= Math.min(45, sheet.rowCount); r++) {
-    const cols: Partial<Record<Field, number>> = {};
-    sheet.getRow(r).eachCell({ includeEmpty: false }, (cell, col) => {
-      const f = fieldFor(cleanText(cell.value));
-      if (f && cols[f] === undefined) cols[f] = col;
-    });
-    if (cols.client && (cols.projectNo || cols.well) && (cols.overview || cols.updates)) return { row: r, cols };
+function cellAt(sheet: ExcelJS.Worksheet, row: number, col: number): ExcelJS.Cell {
+  return sheet.getRow(row).getCell(col);
+}
+function redColour(c: ExcelJS.Color | undefined): boolean {
+  if (!c) return false;
+  if ('argb' in c && c.argb) {
+    const rgb = c.argb.slice(-6);
+    const [r,g,b] = [0,2,4].map(i=>parseInt(rgb.slice(i,i+2),16));
+    return r>=125 && r>g*1.35 && r>b*1.18;
+  }
+  return c.indexed===10;
+}
+function flaggedLines(cell: ExcelJS.Cell, text: string): number[] {
+  const rich = cell.value as {richText?: {text:string;font?:{color?:ExcelJS.Color}}[]}|null;
+  const visible = lines(text);
+  if (!visible.length) return [];
+  if (redColour(cell.font?.color)) return visible.map((_,i)=>i);
+  if (!rich || !Array.isArray(rich.richText)) return [];
+  const red = new Set<number>(); let offset=0;
+  const actual = text.split(/\r?\n/);
+  for (const chunk of rich.richText) {
+    if (redColour(chunk.font?.color)) {
+      for (let i=offset;i<offset+chunk.text.length;i++) {
+        let lineIndex=0;
+        for (let j=0;j<i && j<text.length;j++) if (text[j]==='\n') lineIndex++;
+        if (actual[lineIndex]?.trim()) red.add(actual.slice(0,lineIndex).filter(v=>v.trim()).length);
+      }
+    }
+    offset+=chunk.text.length;
+  }
+  return [...red].sort((a,b)=>a-b);
+}
+const key=(s:string)=>s.toLowerCase().replace(/[^a-z0-9]+/g,'');
+const fieldFor=(heading:string): Field|undefined => ({priority:'priority',client:'client',customer:'client',country:'country',location:'country',projectno:'projectNo',projectnumber:'projectNo',jobno:'projectNo',enquiry:'projectNo',well:'well',wellproject:'well',project:'well',lead:'lead',owner:'lead',overview:'overview',scope:'overview',updates:'updates',update:'updates',notes:'updates'} as Record<string,Field>)[key(heading)];
+function detectHeader(sheet:ExcelJS.Worksheet):{row:number;cols:Partial<Record<Field,number>>}|null {
+  for(let r=1;r<=Math.min(sheet.rowCount,80);r++){
+    const cols:Partial<Record<Field,number>>={};
+    sheet.getRow(r).eachCell({includeEmpty:false},(cell,col)=>{const field=fieldFor(cleanText(cell.value));if(field&&cols[field]===undefined)cols[field]=col;});
+    if(cols.client&&(cols.projectNo||cols.well)&&(cols.overview||cols.updates))return {row:r,cols};
   }
   return null;
 }
-function findMarkers(sheet: ExcelJS.Worksheet): { regional: number; misc: number } {
-  let regional = 0; let misc = 0;
-  for (let r = 1; r <= sheet.rowCount; r++) {
-    const t = rowText(sheet, r).toUpperCase();
-    if (!regional && /MIDDLE EAST REGION/.test(t)) regional = r;
-    if (!misc && /MISCELLANEOUS/.test(t)) misc = r;
+function markers(sheet:ExcelJS.Worksheet):{regional:number;misc:number} {
+  const out={regional:0,misc:0};
+  for(let r=1;r<=sheet.rowCount;r++){
+    let text='';sheet.getRow(r).eachCell({includeEmpty:false},cell=>{text+=' '+cleanText(cell.value);});
+    if(!out.regional&&/middle east region/i.test(text))out.regional=r;
+    if(!out.misc&&/miscellaneous/i.test(text))out.misc=r;
   }
-  return { regional, misc };
+  return out;
 }
-function appendNote(obj: Project, field: NoteField, text: string): void {
-  if (!text.trim()) return;
-  obj[field] = obj[field] ? `${obj[field]}\n${text}` : text;
+function putNote(item:Project,field:NoteField,text:string,red:boolean):void {
+  if(!text.trim())return;
+  const offset=lines(item[field]).length;
+  item[field]+=(item[field]?'\n':'')+text;
+  if(red)item.urgentLines[field].push(...lines(text).map((_,i)=>i+offset));
 }
-function parseRegional(sheet: ExcelJS.Worksheet, start: number, end: number, dest: Project[]): void {
-  let current: Project | null = null;
-  let updates = false;
-  for (let r = start; r < end; r++) {
-    const client = val(sheet, r, 3).trim();
-    const g = val(sheet, r, 7).trim();
-    if (client && !/^(no\.?|client)$/i.test(client)) {
-      current = newProject('regional'); current.client = client;
-      current.country = val(sheet, r, 4); current.projectNo = val(sheet, r, 5);
-      current.well = val(sheet, r, 6) || g;
-      current.lead = val(sheet, r, 8);
-      current.priority = val(sheet, r, 2);
-      dest.push(current); updates = false;
-      if (val(sheet, r, 6) && g) appendNote(current, 'overview', g);
+function parseTable(sheet:ExcelJS.Worksheet,header:{row:number;cols:Partial<Record<Field,number>>},end:number,section:'projects'|'regional',dest:Project[]):void {
+  for(let r=header.row+1;r<end;r++){
+    const p=newProject(section);
+    for(const f of FIELDS){const col=header.cols[f];if(col)p[f]=val(sheet,r,col);}
+    if(!p.client.trim()&&!p.projectNo.trim()&&!p.well.trim())continue;
+    for(const f of FIELDS){const col=header.cols[f];if(!col)continue;const red=flaggedLines(cellAt(sheet,r,col),p[f]);
+      if(f==='overview'||f==='updates')p.urgentLines[f]=red;
+      else if(red.length)p.urgent=true;
+    }
+    dest.push(p);
+  }
+}
+function parseRegional(sheet:ExcelJS.Worksheet,start:number,end:number,dest:Project[]):void {
+  let current:Project|null=null;let updates=false;
+  for(let r=start;r<end;r++){
+    const client=val(sheet,r,3).trim();const note=val(sheet,r,7).trim();
+    if(client&&!/^(no\.?|client)$/i.test(client)){
+      current=newProject('regional');current.client=client;current.country=val(sheet,r,4);current.projectNo=val(sheet,r,5);
+      current.well=val(sheet,r,6)||note;current.lead=val(sheet,r,8);current.priority=val(sheet,r,2);
+      if([2,3,4,5,6,8].some(c=>flaggedLines(cellAt(sheet,r,c),val(sheet,r,c)).length))current.urgent=true;
+      dest.push(current);updates=false;
+      if(val(sheet,r,6)&&note)putNote(current,'overview',note,flaggedLines(cellAt(sheet,r,7),note).length>0);
       continue;
     }
-    if (!current || !g) continue;
-    if (/^updates?:?$/i.test(g)) { updates = true; continue; }
-    appendNote(current, updates ? 'updates' : 'overview', g);
+    if(!current||!note)continue;
+    if(/^updates?:?$/i.test(note)){updates=true;continue;}
+    putNote(current,updates?'updates':'overview',note,flaggedLines(cellAt(sheet,r,7),note).length>0);
   }
 }
-function parseMisc(sheet: ExcelJS.Worksheet, start: number, end: number, dest: MiscItem[]): void {
-  let current: MiscItem | null = null;
-  for (let r = start; r < end; r++) {
-    const desc = val(sheet, r, 4).trim();
-    const index = val(sheet, r, 3).trim();
-    if (!desc || /^description$/i.test(desc)) continue;
-    if (index && (/^\d+$/.test(index) || /^no\.?$/i.test(index))) {
-      if (/^no\.?$/i.test(index)) continue;
-      current = { id: newId(), description: desc, notes: '', urgent: false, urgentLines: [] };
-      dest.push(current);
-    } else if (current) current.notes += `${current.notes ? '\n' : ''}${desc}`;
+function parseMisc(sheet:ExcelJS.Worksheet,start:number,end:number,dest:MiscItem[]):void {
+  let current:MiscItem|null=null;
+  for(let r=start;r<end;r++){
+    const description=val(sheet,r,4).trim();const index=val(sheet,r,3).trim();
+    if(/^description$/i.test(description))continue;
+    if(index&&/^\d+$/.test(index)){
+      current={id:newId(),description,notes:'',urgent:flaggedLines(cellAt(sheet,r,4),description).length>0,urgentLines:[]};dest.push(current);
+      const notes=val(sheet,r,7);
+      if(notes){current.notes=notes;current.urgentLines=flaggedLines(cellAt(sheet,r,7),notes);}
+    }else if(current&&description){const offset=lines(current.notes).length;current.notes+=(current.notes?'\n':'')+description;
+      current.urgentLines.push(...flaggedLines(cellAt(sheet,r,4),description).map(n=>n+offset));}
   }
 }
-function parseMeeting(sheet: ExcelJS.Worksheet, until: number, tracker: Tracker): void {
-  for (let r = 2; r < until; r++) {
-    const label = val(sheet, r, 2).trim();
-    if (!label || /^(meeting details|agenda|priority)$/i.test(label)) continue;
-    if (label.length > 80) continue;
-    const v = val(sheet, r, 4).trim();
-    tracker.meeting.push({ label, value: v });
+function parseMeeting(sheet:ExcelJS.Worksheet,until:number,tracker:Tracker):void {
+  for(let r=2;r<until;r++){
+    const label=val(sheet,r,2).trim();
+    if(!label||/^(meeting details|agenda|priority)$/i.test(label)||label.length>80)continue;
+    tracker.meeting.push({label,value:val(sheet,r,4)});
   }
-  // The source workbook also has a small agenda table above its project header.
-  for (let r = 1; r < until; r++) {
-    if (!/^no\.?$/i.test(val(sheet, r, 3)) || !/^topic$/i.test(val(sheet, r, 4))) continue;
-    for (let agendaRow = r + 1; agendaRow < until; agendaRow++) {
-      const number = val(sheet, agendaRow, 3).trim();
-      if (!number) continue;
-      for (const [col, suffix] of [[4, 'Topic'], [5, 'Attendee'], [7, 'Time']] as const) {
-        const value = val(sheet, agendaRow, col);
-        if (value) tracker.meeting.push({ label: `Agenda ${number} (${suffix})`, value });
-      }
+  for(let r=1;r<until;r++){
+    if(!/^no\.?$/i.test(val(sheet,r,3))||!/^topic$/i.test(val(sheet,r,4)))continue;
+    for(let a=r+1;a<until;a++){
+      const number=val(sheet,a,3).trim();if(!number)continue;
+      tracker.agenda.push({id:newId(),number,topic:val(sheet,a,4),attendee:val(sheet,a,5),time:val(sheet,a,7)||val(sheet,a,6),urgent:[3,4,5,7].some(c=>flaggedLines(cellAt(sheet,a,c),val(sheet,a,c)).length>0)});
     }
     break;
   }
 }
-function parseTable(sheet: ExcelJS.Worksheet, head: { row: number; cols: Partial<Record<Field, number>> }, end: number, section: 'projects' | 'regional', dest: Project[]): void {
-  for (let r = head.row + 1; r < end; r++) {
-    const p = newProject(section);
-    for (const f of FIELDS) if (head.cols[f]) p[f] = val(sheet, r, head.cols[f]!);
-    if (p.client.trim() || p.projectNo.trim() || p.well.trim()) dest.push(p);
-  }
-}
-function applyMeta(tracker: Tracker, book: ExcelJS.Workbook): void {
-  const sheet = book.getWorksheet('_TrackerViewer');
-  if (!sheet) return;
-  try {
-    const data = JSON.parse(val(sheet, 2, 1)) as { urgentSections?: Partial<Record<Section, boolean>>; projects?: { urgent: boolean; urgentLines: Project['urgentLines'] }[]; misc?: { urgent: boolean; urgentLines: number[] }[] };
-    tracker.urgentSections = { ...tracker.urgentSections, ...data.urgentSections };
-    data.projects?.forEach((v, i) => { if (tracker.projects[i]) { tracker.projects[i].urgent = Boolean(v.urgent); tracker.projects[i].urgentLines = { overview: v.urgentLines?.overview || [], updates: v.urgentLines?.updates || [] }; } });
-    data.misc?.forEach((v, i) => { if (tracker.misc[i]) { tracker.misc[i].urgent = Boolean(v.urgent); tracker.misc[i].urgentLines = v.urgentLines || []; } });
-  } catch { /* Invalid extra metadata must not stop users opening their tracker. */ }
-}
-export async function importWorkbook(file: File): Promise<Tracker> {
-  const Excel = await getExcel(); const book = new Excel.Workbook();
-  await book.xlsx.load(new Uint8Array(await file.arrayBuffer()) as never);
-  const tracker = blankTracker(); tracker.sourceName = file.name;
-  for (const sheet of book.worksheets) {
-    if (sheet.name === '_TrackerViewer') continue;
-    if (/^meeting$/i.test(sheet.name)) {
-      for (let r = 2; r <= sheet.rowCount; r++) { const label = val(sheet, r, 1); if (label) tracker.meeting.push({ label, value: val(sheet, r, 2) }); }
-      continue;
-    }
-    if (/^misc/i.test(sheet.name)) { parseMiscNormalised(sheet, tracker.misc); continue; }
-    const markers = findMarkers(sheet);
-    const header = detectHeader(sheet);
-    if (header) {
-      const end = markers.regional || markers.misc || sheet.rowCount + 1;
-      parseTable(sheet, header, end, /middle east|regional/i.test(sheet.name) ? 'regional' : 'projects', tracker.projects);
-      if (header.row > 2 && tracker.meeting.length === 0) parseMeeting(sheet, header.row, tracker);
-    }
-    if (markers.regional) parseRegional(sheet, markers.regional + 1, markers.misc || sheet.rowCount + 1, tracker.projects);
-    if (markers.misc) parseMisc(sheet, markers.misc + 1, sheet.rowCount + 1, tracker.misc);
-  }
-  if (!tracker.projects.length && !tracker.misc.length) throw new Error('No recognisable project/enquiry tables or tracker sections were found in this workbook.');
-  applyMeta(tracker, book);
+function readWeekly(sheet:ExcelJS.Worksheet):Tracker|null {
+  const tracker=blankTracker();const mark=markers(sheet);const head=detectHeader(sheet);
+  if(!head&&!mark.regional&&!mark.misc)return null;
+  if(head){parseTable(sheet,head,mark.regional||mark.misc||sheet.rowCount+1,'projects',tracker.projects);parseMeeting(sheet,head.row,tracker);}
+  if(mark.regional)parseRegional(sheet,mark.regional+1,mark.misc||sheet.rowCount+1,tracker.projects);
+  if(mark.misc)parseMisc(sheet,mark.misc+1,sheet.rowCount+1,tracker.misc);
   return tracker;
 }
-function parseMiscNormalised(sheet: ExcelJS.Worksheet, dest: MiscItem[]): void {
-  for (let r = 2; r <= sheet.rowCount; r++) {
-    const description = val(sheet, r, 1);
-    if (description) dest.push({ id: newId(), description, notes: val(sheet, r, 2), urgent: false, urgentLines: [] });
+function readNormalised(sheet:ExcelJS.Worksheet,tracker:Tracker):void {
+  if(/^meeting$/i.test(sheet.name))for(let r=2;r<=sheet.rowCount;r++){const label=val(sheet,r,1);if(label)tracker.meeting.push({label,value:val(sheet,r,2)});}
+  else if(/^misc/i.test(sheet.name))for(let r=2;r<=sheet.rowCount;r++){const description=val(sheet,r,1);if(description){const notes=val(sheet,r,2);tracker.misc.push({id:newId(),description,notes,urgent:flaggedLines(cellAt(sheet,r,1),description).length>0,urgentLines:flaggedLines(cellAt(sheet,r,2),notes)});}}
+  else {const header=detectHeader(sheet);if(header)parseTable(sheet,header,sheet.rowCount+1,/middle east|regional/i.test(sheet.name)?'regional':'projects',tracker.projects);}
+}
+function readMeta(book:ExcelJS.Workbook):unknown {
+  const sheet=book.getWorksheet('_TrackerViewer');if(!sheet)return null;
+  try {
+    let text='';for(let r=2;r<=sheet.rowCount;r++)text+=val(sheet,r,1);
+    return JSON.parse(text);
+  }catch{return null;}
+}
+function mergeUrgency(target:Tracker,source:Tracker):void {
+  target.urgentSections={...target.urgentSections,...source.urgentSections};
+  target.projects.forEach((p,i)=>{const old=source.projects[i];if(!old)return;
+    p.urgent=p.urgent||old.urgent;p.urgentLines.overview=[...new Set([...p.urgentLines.overview,...old.urgentLines.overview])];
+    p.urgentLines.updates=[...new Set([...p.urgentLines.updates,...old.urgentLines.updates])];
+  });
+  target.misc.forEach((m,i)=>{const old=source.misc[i];if(old){m.urgent=m.urgent||old.urgent;m.urgentLines=[...new Set([...m.urgentLines,...old.urgentLines])];}});
+  target.agenda.forEach((a,i)=>{a.urgent=a.urgent||Boolean(source.agenda[i]?.urgent);});
+}
+export async function importWorkbook(file:File):Promise<Tracker[]> {
+  const Excel=await getExcel();const book=new Excel.Workbook();await book.xlsx.load(new Uint8Array(await file.arrayBuffer()) as never);
+  const meta=readMeta(book) as {version?:number;sheets?:Tracker[];projects?:{urgent:boolean;urgentLines:Project['urgentLines']}[];misc?:{urgent:boolean;urgentLines:number[]}[];urgentSections?:Record<Section,boolean>}|null;
+  const result:Tracker[]=[];let normalised:Tracker|null=null;
+  for(const sheet of book.worksheets){
+    if(sheet.name==='_TrackerViewer')continue;
+    if(/^(projects|middle east|miscellaneous|meeting)$/i.test(sheet.name)){
+      if(!normalised)normalised=blankTracker();readNormalised(sheet,normalised);continue;
+    }
+    const tracker=readWeekly(sheet);
+    if(tracker){tracker.sourceName=file.name;result.push(tracker);}
   }
+  if(normalised&&(normalised.projects.length||normalised.misc.length||normalised.meeting.length))result.push(normalised);
+  if(!result.length&&meta?.sheets?.length)result.push(...meta.sheets);
+  if(!result.length)throw new Error('No recognisable project/enquiry tables were found in this workbook.');
+  result.forEach((sheet,i)=>{sheet.sourceName=file.name;
+    if(meta?.sheets?.[i])mergeUrgency(sheet,meta.sheets[i]);
+  });
+  if(meta&&!meta.sheets&&result.length===1){
+    const sheet=result[0];sheet.urgentSections={...sheet.urgentSections,...meta.urgentSections};
+    meta.projects?.forEach((p,i)=>{if(sheet.projects[i]){sheet.projects[i].urgent ||= Boolean(p.urgent);sheet.projects[i].urgentLines=p.urgentLines??sheet.projects[i].urgentLines;}});
+    meta.misc?.forEach((m,i)=>{if(sheet.misc[i]){sheet.misc[i].urgent ||= Boolean(m.urgent);sheet.misc[i].urgentLines=m.urgentLines??sheet.misc[i].urgentLines;}});
+  }
+  return result;
 }
-function paintHeader(sheet: ExcelJS.Worksheet, names: string[], widths: number[], urgent = false): void {
-  sheet.getRow(1).values = names;
-  sheet.getRow(1).height = 29;
-  sheet.getRow(1).eachCell(cell => { cell.font = { bold: true, color: { argb: urgent ? 'FFFF566B' : 'FFFFFFFF' }, size: 11 }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF172A41' } }; cell.alignment = { vertical: 'middle' }; });
-  widths.forEach((width, i) => { sheet.getColumn(i + 1).width = width; });
-  sheet.views = [{ state: 'frozen', ySplit: 1 }];
-  sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: names.length } };
+function header(cell:ExcelJS.Cell):void {
+  cell.font={bold:true,color:{argb:'FFFFFFFF'},size:10};cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF1E3552'}};
+  cell.alignment={vertical:'middle',wrapText:true};
 }
-function styledNotes(text: string, urgentLines: number[]): ExcelJS.CellRichTextValue | string {
-  if (!urgentLines.length) return text;
-  let visibleIndex = -1;
-  return { richText: text.split('\n').map((line, index, all) => {
-    if (line.trim()) visibleIndex++;
-    return { text: line + (index === all.length - 1 ? '' : '\n'), font: urgentLines.includes(visibleIndex) && line.trim() ? { color: { argb: 'FFDD3344' }, bold: true } : { color: { argb: 'FF253449' } } };
-  }) };
+function styledNotes(text:string,urgent:number[]):ExcelJS.CellRichTextValue|string {
+  if(!urgent.length)return text;
+  let visible=-1;
+  return {richText:text.split('\n').map((t,i,all)=>{if(t.trim())visible++;return {text:t+(i===all.length-1?'':'\n'),font:{color:{argb:urgent.includes(visible)&&t.trim()?'FFD32842':'FF273C57'},bold:urgent.includes(visible)&&Boolean(t.trim())}};})};
 }
-function styleDataRow(row: ExcelJS.Row, urgent: boolean, index: number): void {
-  row.eachCell({ includeEmpty: true }, cell => {
-    cell.alignment = { vertical: 'top', wrapText: true };
-    cell.border = { bottom: { style: 'hair', color: { argb: 'FFE4EAF0' } } };
-    if (index % 2) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4F7FA' } };
-    if (urgent) cell.font = { color: { argb: 'FFDD3344' }, bold: true };
+function styleRow(row:ExcelJS.Row,index:number,urgent:boolean):void {
+  row.eachCell({includeEmpty:true},cell=>{
+    cell.alignment={vertical:'top',wrapText:true};
+    cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:index%2===0?'FFF0F5FA':'FFFFFFFF'}};
+    cell.border={bottom:{style:'hair',color:{argb:'FFDCE5ED'}}};
+    if(urgent)cell.font={color:{argb:'FFCC2840'},bold:true};
   });
 }
-function writeProjects(book: ExcelJS.Workbook, title: string, items: Project[], urgent: boolean): void {
-  const sheet = book.addWorksheet(title);
-  paintHeader(sheet, FIELDS.map(f => HEADERS[f]), [12, 20, 16, 21, 31, 24, 63, 63], urgent);
-  for (const p of items) {
-    const row = sheet.addRow([p.priority, p.client, p.country, p.projectNo, p.well, p.lead, styledNotes(p.overview, p.urgentLines.overview), styledNotes(p.updates, p.urgentLines.updates)]);
-    styleDataRow(row, p.urgent, row.number);
-    row.height = 44;
-    for (const col of [7, 8] as const) if (!p.urgent && p.urgentLines[col === 7 ? 'overview' : 'updates'].length) row.getCell(col).font = { color: { argb: 'FF253449' } };
+function writeWeekly(book:ExcelJS.Workbook,tracker:Tracker,index:number):void {
+  const name=(tracker.meeting.find(m=>/meeting date( and time)?/i.test(m.label))?.value.match(/\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2}/)?.[0]||`Week ${index+1}`).replace(/\//g,'-');
+  let unique=name.slice(0,31),suffix=1;
+  while(book.getWorksheet(unique))unique=`${name.slice(0,26)} (${++suffix})`;
+  const sheet=book.addWorksheet(unique);sheet.views=[{state:'frozen',ySplit:1}];
+  [5,13,18,20,28,24,60,60].forEach((width,i)=>{sheet.getColumn(i+2).width=width;});
+  let r=2;sheet.getCell(r,2).value='MEETING DETAILS';header(sheet.getCell(r,2));r++;
+  for(const m of tracker.meeting){sheet.getCell(r,2).value=m.label;sheet.getCell(r,4).value=m.value;sheet.getCell(r,2).font={bold:true,color:{argb:'FF304B65'}};sheet.getCell(r,4).alignment={wrapText:true};r++;}
+  r++;sheet.getCell(r,3).value='AGENDA';header(sheet.getCell(r,3));r++;
+  for(const [c,title] of [[3,'No'],[4,'Topic'],[5,'Attendee'],[7,'Time Allocated']] as const){sheet.getCell(r,c).value=title;header(sheet.getCell(r,c));}r++;
+  for(const a of tracker.agenda){const row=sheet.getRow(r++);row.getCell(3).value=a.number;row.getCell(4).value=a.topic;row.getCell(5).value=a.attendee;row.getCell(7).value=a.time;styleRow(row,row.number,a.urgent);row.height=34;}
+  r+=2;
+  function projectHeader(){for(let i=0;i<FIELDS.length;i++){const cell=sheet.getCell(r,i+2);cell.value=HEADERS[FIELDS[i]];header(cell);}r++;}
+  projectHeader();
+  for(const p of tracker.projects.filter(p=>p.section==='projects')){
+    const row=sheet.getRow(r++);
+    for(let i=0;i<FIELDS.length;i++){const f=FIELDS[i];row.getCell(i+2).value=f==='overview'||f==='updates'?styledNotes(p[f],p.urgentLines[f]):p[f];}
+    styleRow(row,row.number,p.urgent);row.height=46;
   }
+  r+=2;sheet.getCell(r,3).value='MIDDLE EAST REGION';header(sheet.getCell(r,3));r++;
+  for(const p of tracker.projects.filter(p=>p.section==='regional')){
+    const row=sheet.getRow(r++);row.getCell(2).value=p.priority;row.getCell(3).value=p.client;row.getCell(4).value=p.country;row.getCell(5).value=p.projectNo;row.getCell(6).value=p.well;row.getCell(8).value=p.lead;
+    row.getCell(7).value=styledNotes(p.overview,p.urgentLines.overview);styleRow(row,row.number,p.urgent);row.height=40;
+    if(p.updates){const rr=sheet.getRow(r++);rr.getCell(7).value='Update';const ur=sheet.getRow(r++);ur.getCell(7).value=styledNotes(p.updates,p.urgentLines.updates);ur.alignment={wrapText:true};ur.height=43;}
+  }
+  r+=2;sheet.getCell(r,3).value='MISCELLANEOUS';header(sheet.getCell(r,3));r++;
+  sheet.getCell(r,3).value='No.';sheet.getCell(r,4).value='Description';header(sheet.getCell(r,3));header(sheet.getCell(r,4));r++;
+  tracker.misc.forEach((m,i)=>{const row=sheet.getRow(r++);row.getCell(3).value=String(i+1);row.getCell(4).value=m.description;row.getCell(7).value=styledNotes(m.notes,m.urgentLines);styleRow(row,row.number,m.urgent);row.height=44;});
 }
-export async function exportWorkbook(tracker: Tracker): Promise<Blob> {
-  const Excel = await getExcel(); const book = new Excel.Workbook();
-  book.creator = 'Tracker Viewer'; book.created = new Date();
-  writeProjects(book, 'Projects', tracker.projects.filter(p => p.section === 'projects'), tracker.urgentSections.projects);
-  writeProjects(book, 'Middle East', tracker.projects.filter(p => p.section === 'regional'), tracker.urgentSections.regional);
-  const misc = book.addWorksheet('Miscellaneous');
-  paintHeader(misc, ['Description', 'Notes'], [38, 110], tracker.urgentSections.misc);
-  tracker.misc.forEach((m, i) => { const row = misc.addRow([m.description, styledNotes(m.notes, m.urgentLines)]); styleDataRow(row, m.urgent, i); row.height = 45; });
-  const meeting = book.addWorksheet('Meeting');
-  paintHeader(meeting, ['Field', 'Value'], [31, 105]);
-  tracker.meeting.forEach(m => meeting.addRow([m.label, m.value]));
-  const meta = book.addWorksheet('_TrackerViewer');
-  meta.getCell('A1').value = 'Tracker Viewer metadata v1';
-  meta.getCell('A2').value = JSON.stringify({ urgentSections: tracker.urgentSections, projects: [...tracker.projects.filter(p => p.section === 'projects'), ...tracker.projects.filter(p => p.section === 'regional')].map(p => ({ urgent: p.urgent, urgentLines: p.urgentLines })), misc: tracker.misc.map(m => ({ urgent: m.urgent, urgentLines: m.urgentLines })) });
-  meta.state = 'veryHidden';
-  const buffer = await book.xlsx.writeBuffer();
-  return new Blob([buffer as unknown as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+export async function exportWorkbook(sheets:Tracker[]):Promise<Blob> {
+  const Excel=await getExcel();const book=new Excel.Workbook();book.creator='Tracker Viewer';
+  sheets.forEach((tracker,i)=>writeWeekly(book,tracker,i));
+  const meta=book.addWorksheet('_TrackerViewer');meta.getCell('A1').value='Tracker Viewer metadata v2';
+  const data=JSON.stringify({version:2,sheets});
+  for(let i=0;i<data.length;i+=30000)meta.getCell(Math.floor(i/30000)+2,1).value=data.slice(i,i+30000);
+  meta.state='veryHidden';
+  const buffer=await book.xlsx.writeBuffer();
+  return new Blob([buffer as unknown as BlobPart],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
 }

@@ -13,8 +13,9 @@ export interface Project {
 }
 export interface MiscItem { id: string; description: string; notes: string; urgent: boolean; urgentLines: number[]; }
 export interface MeetingItem { label: string; value: string; }
+export interface AgendaItem { id: string; number: string; topic: string; attendee: string; time: string; urgent: boolean; }
 export interface Tracker {
-  projects: Project[]; misc: MiscItem[]; meeting: MeetingItem[];
+  projects: Project[]; misc: MiscItem[]; meeting: MeetingItem[]; agenda: AgendaItem[];
   urgentSections: Record<Section, boolean>; sourceName: string;
 }
 let sequence = 0;
@@ -23,7 +24,7 @@ export function newProject(section: 'projects' | 'regional' = 'projects'): Proje
   return { id: newId(), section, urgent: false, priority: '', client: '', country: '', projectNo: '', well: '', lead: '', overview: '', updates: '', urgentLines: { overview: [], updates: [] } };
 }
 export function blankTracker(): Tracker {
-  return { projects: [], misc: [], meeting: [], urgentSections: { projects: false, regional: false, misc: false }, sourceName: '' };
+  return { projects: [], misc: [], meeting: [], agenda: [], urgentSections: { projects: false, regional: false, misc: false }, sourceName: '' };
 }
 export function lines(text: string): string[] { return text.replace(/\r\n/g, '\n').split('\n').filter(line => line.trim() !== ''); }
 export function bullet(text: string): string { const t = text.trim(); return /^[•·●-]\s*/.test(t) ? t : `• ${t}`; }
@@ -36,4 +37,30 @@ export function cleanText(v: unknown): string {
     if (obj.result !== undefined) return cleanText(obj.result);
   }
   return String(v);
+}
+/** Duplicate a weekly tracker while keeping the previous week's items intact. */
+export function nextWeek(previous: Tracker): Tracker {
+  const next: Tracker = structuredClone(previous);
+  next.projects.forEach(p => { p.id = newId(); });
+  next.misc.forEach(m => { m.id = newId(); });
+  next.agenda.forEach(a => { a.id = newId(); });
+  const field = next.meeting.find(m => /meeting date( and time)?/i.test(m.label));
+  const existing = field?.value ?? '';
+  const uk = existing.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(.*)$/);
+  const iso = existing.match(/^(\d{4})-(\d\d)-(\d\d)(.*)$/);
+  let date: Date;
+  if (uk) date = new Date(Date.UTC(+uk[3], +uk[2] - 1, +uk[1] + 7));
+  else if (iso) date = new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3] + 7));
+  else { date = new Date(); date.setDate(date.getDate() + 7); }
+  const dd = String(date.getUTCDate()).padStart(2, '0');
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const yyyy = String(date.getUTCFullYear());
+  const value = iso ? `${yyyy}-${mm}-${dd}${iso[4]}` : `${dd}/${mm}/${yyyy}${uk?.[4] ?? ', 14:00'}`;
+  if (field) field.value = value;
+  else next.meeting.unshift({ label: 'Meeting date and time', value });
+  return next;
+}
+export function sheetLabel(tracker: Tracker, index: number): string {
+  const date = tracker.meeting.find(m => /meeting date( and time)?/i.test(m.label))?.value;
+  return date?.split(/[ ,]/)[0] || `Sheet ${index + 1}`;
 }

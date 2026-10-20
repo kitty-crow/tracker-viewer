@@ -5,17 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/stage-latest.mjs && vite --host 127.0.0.1",
-    "build": "node scripts/stage-latest.mjs && tsc --noEmit && vite build",
+    "build": "node scripts/stage-latest.mjs && tsc --noEmit && vite build && node scripts/build-exe.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
-    "start": "node server.mjs",
-    "serve": "node server.mjs"
+    "start": "node --experimental-strip-types server.mts",
+    "serve": "node --experimental-strip-types server.mts"
   },
   "dependencies": {
     "exceljs": "^4.4.0"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
-    "vite": "^8.3.4"
+    "vite": "^8.3.4",
+    "postject": "^1.0.0-alpha.6"
   }
 }

@@ -1,72 +1,47 @@
 # Tracker Viewer
 
-A fast, local-first TypeScript editor for weekly Excel projects and enquiries trackers. No backend, account, database or Excel installation is required. The UI uses a proper HTML shell with modular TypeScript and CSS, and exports a professionally styled `.xlsx` workbook.
+A fast TypeScript interface for weekly Projects & Enquiries Excel trackers, including the Meeting Details / Agenda, Projects, Middle East Region and Miscellaneous sections.
 
-## Get started
+## Windows installation and build
 
-```sh
-bun install
-bun run dev
-```
-
-Alternatively use `npm install` and `npm run dev`. Open the local URL shown by Vite. For a production build:
-
-```sh
-bun run build
-bun run preview
-```
-
-`npm run build` also works. The finished website is in `dist/` and can be hosted as static files. Excel processing is loaded only when needed.
-
-## Local static server (production build)
-
-Build first, then serve the finished `dist/` directory using the included dependency-free Node.js server:
+Install Node.js 22 or newer on the **build computer**. In PowerShell, use `npm.cmd` if PowerShell script execution is restricted:
 
 ```powershell
-npm.cmd run build; if ($LASTEXITCODE -eq 0) { npm.cmd start }
+npm.cmd install; if ($LASTEXITCODE -eq 0) { npm.cmd run build }
 ```
 
-Open http://127.0.0.1:59413/. The server binds exclusively to `127.0.0.1`, not your network interfaces. Optional: set `PORT` to another TCP port in the range 1 to 65535. Port `79413` is not valid. The server reads `dist/` only, does not run a backend API and does not save browser edits automatically.
+On Windows, `npm run build` automatically typechecks the TypeScript, builds the Vite static website, and creates **`release/TrackerViewer.exe`**. This is a Windows single-executable Node SEA containing its own JavaScript runtime, server and the compiled static site. **The executable does not need Node.js or npm on the computer that runs it.** Double-click the EXE to start a loopback-only HTTP server and automatically open the default browser at `http://127.0.0.1:59413/`. Keep the EXE running while using the page, and close its console window to stop the server. Windows may warn about an unsigned executable.
 
-## Auto-load a folder
+For local development use `npm.cmd run dev`. To run the built `dist/` site using the standalone TypeScript source server and a local Node installation use `npm.cmd start`. Builds on Linux/macOS create `dist/`, but skip the Windows-specific packaging step. The CI workflow tests both platforms and publishes a Windows EXE as a workflow artefact.
 
-Copy `.env.example` to `.env`, then configure the folder **on the machine that builds the site**:
+## Editing
 
-```env
-TRACKER_FOLDER="C:/Users/YourName/Documents/Trackers"
-```
+The workbook displays as one continuous page. Sidebar links jump to Meeting & Agenda, Projects & Enquiries, Middle East Region, and Miscellaneous. Meeting fields are laid out compactly at the top. Click a cell to edit. Enter saves a short field, while Enter inserts a bullet in multiline notes. Individual note lines, entire projects, agenda lines and complete sections may be marked urgent. Existing red Excel text is recognised as urgent during import.
 
-Run `bun run build` (or `bun run dev`). The newest `.xlsx` file in that directory, selected by modification time, is included as the initial snapshot. Files starting with `~$` are ignored. The folder path is **not** exposed in the generated site. Rebuild to update that snapshot. **Privacy warning:** this places a copy of the workbook into `dist/latest-tracker.xlsx`. Anyone who can access your hosted static site can download that file. Do not publish this build publicly if the workbook contains confidential business information. For sensitive files, leave `TRACKER_FOLDER` empty and use the browser folder connector on your local machine instead.
+The **+ New sheet** action clones the previous weekly sheet, retaining its projects and notes, while advancing the meeting date seven days. Each week's data remains independently editable. **Export Excel** downloads a workbook containing a separate Excel worksheet for each week, including the meeting agenda. Styling and urgency flags survive the export. The application does not require Excel formulas.
 
-For live local folder loading without rebuilding, use **Connect folder** in Chrome or Edge on `localhost` or HTTPS. Give permission when prompted; the permissioned folder handle is retained in the browser's IndexedDB. The editor attempts to open the newest workbook from that folder on future visits when permission remains granted. **Latest** checks again. Browsers will not allow a static website to silently access arbitrary local filesystem paths from an environment variable.
+## Auto-save and loading
 
-## Editing workflow
+The **Auto-save** slider is enabled by default. It automatically saves the current editable workspace in this browser's IndexedDB after changes, and restores it on the next visit. This is **browser draft storage, not an automatic overwrite of the original Excel file**. Export Excel to create an `.xlsx` copy or share a workbook. Disabling auto-save leaves existing drafts intact but stops subsequent draft writes.
 
-1. Open an `.xlsx` tracker, connect a folder, or use the embedded build-time snapshot.
-2. Use the left navigation for **Projects & enquiries**, **Middle East region**, **Miscellaneous**, and **Meeting details**.
-3. Click any cell to edit. Use **Enter** to save a short text field, or press **Enter** to add a new bullet in longer notes. Click outside a cell to save it.
-4. Add projects or enquiries, sort headers, search or combine field filters.
-5. Use **!** on a row or section to mark it urgent. The **☷** notes editor marks individual lines urgent with red foreground. The urgent-only filter finds flagged items.
-6. **Export Excel** downloads a new workbook. The original is never overwritten.
+Open an Excel workbook using **Open file**, or **Connect folder** using Chrome/Edge. The authorised browser folder lets **Latest** find the newest workbook without rebuilding. Browser permissions are needed for direct folder access. To load the latest workbook on each build, copy `.env.example` to `.env` and configure `TRACKER_FOLDER` on the build computer. The build script stages the latest `.xlsx` in `dist/`. That same snapshot is embedded in the compiled Windows EXE. If a saved browser draft exists, it is restored preferentially to protect changes.
 
-### Excel compatibility
+**Confidentiality:** embedding the tracker in the website or executable includes the actual workbook bytes. Do not publish or distribute builds containing sensitive workbooks. Leave `TRACKER_FOLDER` empty to use user-authorised file opening without embedding data.
 
-The supplied weekly template contains a main tabular section, a block-form Middle East region, miscellaneous notes, and meeting information, including merged cells. All these logical sections are imported. Export normalises the content into consistently styled `Projects`, `Middle East`, `Miscellaneous` and `Meeting` sheets, with Excel AutoFilters and a hidden `_TrackerViewer` sheet to round-trip urgency flags. This deliberately does **not** reproduce the original merged-cell page layout, which makes future editing easier.
+## Structure
 
-Other workbooks with equivalent `Client`, `Project No`, `Overview` and/or `Updates` headers are supported; arbitrary unrelated spreadsheets or `.xls` binaries are not. Excel macros are not preserved. Formula evaluation is intentionally not implemented.
+- `index.html`: semantic HTML page skeleton
+- `src/ui.ts`: continuous scroll UI, inline editing, notes, urgency, agenda, sheet tabs
+- `src/workbook.ts`: ExcelJS workbook parsing, red formatting recognition, multiple weekly sheets and export
+- `src/state.ts`: workspace state, filters, active sheet, dirty tracking
+- `src/types.ts`: typed tracker model and weekly-sheet cloning
+- `src/storage.ts`: persistent IndexedDB browser drafts and saved auto-save setting
+- `src/folder.ts`: browser folder access and newest file selection
+- `src/main.ts`: application initialisation, file import and export
+- `src/styles.css`: responsive design and zebra striping
+- `server.mts`: minimal TypeScript static server for `npm start`
+- `scripts/standalone.cjs`: browser-opening embedded server runtime used by Node SEA
+- `scripts/build-exe.mjs`: Windows Node SEA executable packaging
+- `scripts/stage-latest.mjs`: build-time `.env` tracker discovery
 
-## Project structure
-
-- `index.html`: accessible application skeleton
-- `src/main.ts`: file loading, exporting, initialisation
-- `src/folder.ts`: browser folder permissions and automatic latest-file discovery
-- `src/workbook.ts`: Excel import, template adaptation and export
-- `src/types.ts`: typed tracker model and shared helpers
-- `src/state.ts`: in-memory state, dirty tracking and filtering state
-- `src/ui.ts`: rendering, direct cell edits, notes and urgency interactions
-- `src/styles.css`: responsive visual design
-- `scripts/stage-latest.mjs`: build-time folder handling with no server
-
-## Privacy
-
-Everything runs locally in the user's browser. A configured build folder is accessed only by the local build script. Opening or exporting a workbook never uploads it to a backend. As with other purely client-side editors, changes live in memory until **Export Excel**; do not close the page with unsaved changes.
+The application serves only on `127.0.0.1` by default. Override with a valid TCP port using `PORT` if needed.

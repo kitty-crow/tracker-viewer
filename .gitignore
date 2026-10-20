@@ -5,3 +5,6 @@ public/latest-tracker.xlsx
 public/tracker-manifest.json
 *.log
 .DS_Store
+
+release/
+.sea/
