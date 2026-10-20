@@ -188,8 +188,8 @@ export async function importWorkbook(file:File):Promise<Tracker[]> {
     if(meta?.sheets?.[i])mergeUrgency(sheet,meta.sheets[i]);
   });
   if(meta&&!meta.sheets&&result.length===1){
-    const sheet=result[0];
-    if (!sheet) return result;
+    // result.length === 1 guarantees this element exists.
+    const sheet=result[0]!;
     sheet.urgentSections={...sheet.urgentSections,...meta.urgentSections};
     meta.projects?.forEach((project,i)=>{
       const entry=sheet.projects[i];
