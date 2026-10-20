@@ -21,3 +21,4 @@ const newest = files[0];
 if (resolve(newest.path) !== resolve(destination)) copyFileSync(newest.path, destination);
 writeFileSync(manifest, JSON.stringify({ filename: newest.name, modified: statSync(newest.path).mtime.toISOString() }));
 console.log(`Bundled latest tracker: ${newest.name}`);
+console.warn("PRIVACY: the tracker will be included in dist/ and downloadable by visitors if you publish this static site.");

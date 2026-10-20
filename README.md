@@ -26,7 +26,7 @@ Copy `.env.example` to `.env`, then configure the folder **on the machine that b
 TRACKER_FOLDER="C:/Users/YourName/Documents/Trackers"
 ```
 
-Run `bun run build` (or `bun run dev`). The newest `.xlsx` file in that directory, selected by modification time, is included as the initial snapshot. Files starting with `~$` are ignored. The folder path is **not** exposed in the generated site. Rebuild to update that snapshot.
+Run `bun run build` (or `bun run dev`). The newest `.xlsx` file in that directory, selected by modification time, is included as the initial snapshot. Files starting with `~$` are ignored. The folder path is **not** exposed in the generated site. Rebuild to update that snapshot. **Privacy warning:** this places a copy of the workbook into `dist/latest-tracker.xlsx`. Anyone who can access your hosted static site can download that file. Do not publish this build publicly if the workbook contains confidential business information. For sensitive files, leave `TRACKER_FOLDER` empty and use the browser folder connector on your local machine instead.
 
 For live local folder loading without rebuilding, use **Connect folder** in Chrome or Edge on `localhost` or HTTPS. Give permission when prompted; the permissioned folder handle is retained in the browser's IndexedDB. The editor attempts to open the newest workbook from that folder on future visits when permission remains granted. **Latest** checks again. Browsers will not allow a static website to silently access arbitrary local filesystem paths from an environment variable.
 
