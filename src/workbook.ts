@@ -9,14 +9,14 @@ const val = (sheet: ExcelJS.Worksheet, row: number, col: number): string => {
 function cellAt(sheet: ExcelJS.Worksheet, row: number, col: number): ExcelJS.Cell {
   return sheet.getRow(row).getCell(col);
 }
-function redColour(c: ExcelJS.Color | undefined): boolean {
+function redColour(c: Partial<ExcelJS.Color> | undefined): boolean {
   if (!c) return false;
   if ('argb' in c && c.argb) {
     const rgb = c.argb.slice(-6);
     const [r,g,b] = [0,2,4].map(i=>parseInt(rgb.slice(i,i+2),16));
     return r>=125 && r>g*1.35 && r>b*1.18;
   }
-  return c.indexed===10;
+  return 'indexed' in c && c.indexed===10;
 }
 function flaggedLines(cell: ExcelJS.Cell, text: string): number[] {
   const rich = cell.value as {richText?: {text:string;font?:{color?:ExcelJS.Color}}[]}|null;
