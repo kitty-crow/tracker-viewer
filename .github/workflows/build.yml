@@ -25,7 +25,7 @@ jobs:
           # This must succeed without rebuilding or restarting the EXE.
           $path = 'public/DiscoveredAtRuntime.xlsx'
           Set-Content -Path $path -Value 'runtime test workbook' -NoNewline
-          $process = Start-Process -FilePath './release/TrackerViewer.exe' -PassThru -WindowStyle Hidden
+          $process = Start-Process -FilePath './release/TrackerViewer.exe' -PassThru -WindowStyle Hidden -WorkingDirectory (Get-Location).Path -RedirectStandardOutput 'exe-out.log' -RedirectStandardError 'exe-err.log'
           try {
             $ready = $false
             for ($i = 0; $i -lt 20; $i++) {
@@ -38,7 +38,7 @@ jobs:
             if (!$ready) { throw 'Windows EXE failed to discover a workbook added after packaging' }
             $bytes = Invoke-WebRequest -Uri 'http://127.0.0.1:59413/__tracker/latest.xlsx' -UseBasicParsing
             if ($bytes.StatusCode -ne 200) { throw 'Runtime workbook cannot be downloaded' }
-          } finally { Stop-Process -Id $process.Id -ErrorAction SilentlyContinue; Remove-Item $path -ErrorAction SilentlyContinue }
+          } finally { Stop-Process -Id $process.Id -ErrorAction SilentlyContinue; Get-Content exe-out.log -ErrorAction SilentlyContinue; Get-Content exe-err.log -ErrorAction SilentlyContinue; Remove-Item $path -ErrorAction SilentlyContinue }
       - name: Check Windows executable
         if: runner.os == 'Windows'
         shell: pwsh
