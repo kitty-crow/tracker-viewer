@@ -18,6 +18,16 @@ bun run preview
 
 `npm run build` also works. The finished website is in `dist/` and can be hosted as static files. Excel processing is loaded only when needed.
 
+## Local static server (production build)
+
+Build first, then serve the finished `dist/` directory using the included dependency-free Node.js server:
+
+```powershell
+npm.cmd run build; if ($LASTEXITCODE -eq 0) { npm.cmd start }
+```
+
+Open http://127.0.0.1:59413/. The server binds exclusively to `127.0.0.1`, not your network interfaces. Optional: set `PORT` to another TCP port in the range 1 to 65535. Port `79413` is not valid. The server reads `dist/` only, does not run a backend API and does not save browser edits automatically.
+
 ## Auto-load a folder
 
 Copy `.env.example` to `.env`, then configure the folder **on the machine that builds the site**:
