@@ -78,12 +78,3 @@ export async function loadConnectedFolder(prompt = false): Promise<FolderSelecti
   if (!folder || !(await canRead(folder, prompt))) return null;
   return newest(folder);
 }
-export async function loadBuiltIn(): Promise<FolderSelection | null> {
-  const manifestResponse = await fetch('./tracker-manifest.json', { cache: 'no-store' });
-  if (!manifestResponse.ok) return null;
-  const data = (await manifestResponse.json()) as { filename: string };
-  const fileResponse = await fetch('./latest-tracker.xlsx', { cache: 'no-store' });
-  if (!fileResponse.ok) return null;
-  const bytes = await fileResponse.blob();
-  return { file: new File([bytes], data.filename, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), label: 'Build-time folder' };
-}

@@ -1,8 +1,8 @@
 node_modules/
 dist/
 .env
-public/latest-tracker.xlsx
-public/tracker-manifest.json
+public/**/*.xlsx
+public/**/*.xlsm
 *.log
 .DS_Store
 

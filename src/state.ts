@@ -10,12 +10,12 @@ export const state: State = { tracker: initial, sheets: [initial], activeSheet: 
 export function setTrackers(trackers: Tracker[], from: string, activeSheet = trackers.length - 1, signature: string | null = null): void {
   if (!trackers.length) trackers = [blankTracker()];
   state.sheets = trackers; state.activeSheet = Math.max(0, Math.min(activeSheet, trackers.length - 1));
-  state.tracker = trackers[state.activeSheet]; state.section = 'projects';
+  state.tracker = trackers[state.activeSheet] ?? trackers[0] ?? blankTracker(); state.section = 'projects';
   state.query = ''; state.filters = []; state.sort = null; state.selectedId = null; state.dirty = false; state.loadingFrom = from; state.sourceSignature = signature;
 }
 export function selectSheet(index: number): void {
   if (index < 0 || index >= state.sheets.length) return;
-  state.activeSheet = index; state.tracker = state.sheets[index]; state.selectedId = null;
+  state.activeSheet = index; state.tracker = state.sheets[index] ?? state.tracker; state.selectedId = null;
 }
 export function changed(): void {
   state.dirty = true; window.dispatchEvent(new Event('tracker-changed'));

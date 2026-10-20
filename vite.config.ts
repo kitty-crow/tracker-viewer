@@ -1,20 +1,17 @@
-import { createRequire } from 'node:module';
 import { defineConfig } from 'vite';
-
-const require = createRequire(import.meta.url);
-const runtime = require('./scripts/runtime-tracker.cjs') as {
-  handleRequest: (req: unknown, res: unknown, options: {root: string}) => boolean;
-};
+import { handleTrackerRequest } from './scripts/runtime-tracker.mts';
 
 export default defineConfig({
   base: './',
+  // Runtime tracker files are served only by the local scanner, never bundled or published.
+  publicDir: false,
   build: { target: 'es2022', cssCodeSplit: false },
   plugins: [{
     name: 'live-local-trackers',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (!runtime.handleRequest(req, res, {root: process.cwd()})) next();
+        if (!handleTrackerRequest(req, res, { root: process.cwd() })) next();
       });
-    }
-  }]
+    },
+  }],
 });

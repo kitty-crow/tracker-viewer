@@ -1,5 +1,5 @@
 import type ExcelJS from 'exceljs';
-import { blankTracker, cleanText, FIELDS, HEADERS, lines, newId, newProject, type AgendaItem, type Field, type MiscItem, type NoteField, type Project, type Section, type Tracker } from './types';
+import { blankTracker, cleanText, FIELDS, HEADERS, lines, newId, newProject, type Field, type MiscItem, type NoteField, type Project, type Section, type Tracker } from './types';
 const getExcel = async () => { const mod = await import('exceljs/dist/exceljs.min.js'); return mod.default ?? mod; };
 const val = (sheet: ExcelJS.Worksheet, row: number, col: number): string => {
   const c = sheet.getRow(row).getCell(col);
@@ -14,7 +14,7 @@ function redColour(c: Partial<ExcelJS.Color> | undefined): boolean {
   if ('argb' in c && c.argb) {
     const rgb = c.argb.slice(-6);
     const [r,g,b] = [0,2,4].map(i=>parseInt(rgb.slice(i,i+2),16));
-    return r>=125 && r>g*1.35 && r>b*1.18;
+    return (r ?? 0)>=125 && (r ?? 0)>(g ?? 0)*1.35 && (r ?? 0)>(b ?? 0)*1.18;
   }
   return 'indexed' in c && c.indexed===10;
 }
@@ -27,14 +27,13 @@ function flaggedLines(cell: ExcelJS.Cell, text: string): number[] {
   const red = new Set<number>(); let offset=0;
   const actual = text.split(/\r?\n/);
   for (const chunk of rich.richText) {
-    if (redColour(chunk.font?.color)) {
-      for (let i=offset;i<offset+chunk.text.length;i++) {
-        let lineIndex=0;
-        for (let j=0;j<i && j<text.length;j++) if (text[j]==='\n') lineIndex++;
-        if (actual[lineIndex]?.trim()) red.add(actual.slice(0,lineIndex).filter(v=>v.trim()).length);
-      }
-    }
+    const begin=offset;
     offset+=chunk.text.length;
+    if (!redColour(chunk.font?.color)) continue;
+    for (let i=begin;i<offset;i++) {
+      const lineIndex=text.slice(0,Math.min(i,text.length)).split('\n').length-1;
+      if (actual[lineIndex]?.trim()) red.add(actual.slice(0,lineIndex).filter(v=>v.trim()).length);
+    }
   }
   return [...red].sort((a,b)=>a-b);
 }
@@ -70,7 +69,7 @@ function parseTable(sheet:ExcelJS.Worksheet,header:{row:number;cols:Partial<Reco
     if(!p.client.trim()&&!p.projectNo.trim()&&!p.well.trim())continue;
     for(const f of FIELDS){const col=header.cols[f];if(!col)continue;const red=flaggedLines(cellAt(sheet,r,col),p[f]);
       if(f==='overview'||f==='updates')p.urgentLines[f]=red;
-      else if(red.length)p.urgent=true;
+      if(f!=='overview'&&f!=='updates'&&red.length)p.urgent=true;
     }
     dest.push(p);
   }
@@ -82,9 +81,10 @@ function parseRegional(sheet:ExcelJS.Worksheet,start:number,end:number,dest:Proj
     if(client&&!/^(no\.?|client)$/i.test(client)){
       current=newProject('regional');current.client=client;current.country=val(sheet,r,4);current.projectNo=val(sheet,r,5);
       current.well=val(sheet,r,6)||note;current.lead=val(sheet,r,8);current.priority=val(sheet,r,2);
-      if([2,3,4,5,6,8].some(c=>flaggedLines(cellAt(sheet,r,c),val(sheet,r,c)).length))current.urgent=true;
+      current.urgent=[2,3,4,5,6,8].some(c=>flaggedLines(cellAt(sheet,r,c),val(sheet,r,c)).length>0);
       dest.push(current);updates=false;
-      if(val(sheet,r,6)&&note)putNote(current,'overview',note,flaggedLines(cellAt(sheet,r,7),note).length>0);
+      const extraNote=val(sheet,r,6)&&note ? note : '';
+      putNote(current,'overview',extraNote,flaggedLines(cellAt(sheet,r,7),extraNote).length>0);
       continue;
     }
     if(!current||!note)continue;
@@ -100,8 +100,11 @@ function parseMisc(sheet:ExcelJS.Worksheet,start:number,end:number,dest:MiscItem
     if(index&&/^\d+$/.test(index)){
       current={id:newId(),description,notes:'',urgent:flaggedLines(cellAt(sheet,r,4),description).length>0,urgentLines:[]};dest.push(current);
       const notes=val(sheet,r,7);
-      if(notes){current.notes=notes;current.urgentLines=flaggedLines(cellAt(sheet,r,7),notes);}
-    }else if(current&&description){const offset=lines(current.notes).length;current.notes+=(current.notes?'\n':'')+description;
+      current.notes=notes;
+      current.urgentLines=flaggedLines(cellAt(sheet,r,7),notes);
+      continue;
+    }
+    if(current&&description){const offset=lines(current.notes).length;current.notes+=(current.notes?'\n':'')+description;
       current.urgentLines.push(...flaggedLines(cellAt(sheet,r,4),description).map(n=>n+offset));}
   }
 }
@@ -128,10 +131,27 @@ function readWeekly(sheet:ExcelJS.Worksheet):Tracker|null {
   if(mark.misc)parseMisc(sheet,mark.misc+1,sheet.rowCount+1,tracker.misc);
   return tracker;
 }
+function readMeetingSheet(sheet: ExcelJS.Worksheet, tracker: Tracker): void {
+  for (let row=2; row<=sheet.rowCount; row++) {
+    const label = val(sheet,row,1);
+    if (!label) continue;
+    tracker.meeting.push({ label, value: val(sheet,row,2) });
+  }
+}
+function readMiscSheet(sheet: ExcelJS.Worksheet, tracker: Tracker): void {
+  for (let row=2; row<=sheet.rowCount; row++) {
+    const description=val(sheet,row,1);
+    if (!description) continue;
+    const notes=val(sheet,row,2);
+    tracker.misc.push({id:newId(),description,notes,urgent:flaggedLines(cellAt(sheet,row,1),description).length>0,urgentLines:flaggedLines(cellAt(sheet,row,2),notes)});
+  }
+}
 function readNormalised(sheet:ExcelJS.Worksheet,tracker:Tracker):void {
-  if(/^meeting$/i.test(sheet.name))for(let r=2;r<=sheet.rowCount;r++){const label=val(sheet,r,1);if(label)tracker.meeting.push({label,value:val(sheet,r,2)});}
-  else if(/^misc/i.test(sheet.name))for(let r=2;r<=sheet.rowCount;r++){const description=val(sheet,r,1);if(description){const notes=val(sheet,r,2);tracker.misc.push({id:newId(),description,notes,urgent:flaggedLines(cellAt(sheet,r,1),description).length>0,urgentLines:flaggedLines(cellAt(sheet,r,2),notes)});}}
-  else {const header=detectHeader(sheet);if(header)parseTable(sheet,header,sheet.rowCount+1,/middle east|regional/i.test(sheet.name)?'regional':'projects',tracker.projects);}
+  if (/^meeting$/i.test(sheet.name)) { readMeetingSheet(sheet, tracker); return; }
+  if (/^misc/i.test(sheet.name)) { readMiscSheet(sheet, tracker); return; }
+  const header=detectHeader(sheet);
+  if (!header) return;
+  parseTable(sheet,header,sheet.rowCount+1,/middle east|regional/i.test(sheet.name)?'regional':'projects',tracker.projects);
 }
 function readMeta(book:ExcelJS.Workbook):unknown {
   const sheet=book.getWorksheet('_TrackerViewer');if(!sheet)return null;
@@ -156,7 +176,7 @@ export async function importWorkbook(file:File):Promise<Tracker[]> {
   for(const sheet of book.worksheets){
     if(sheet.name==='_TrackerViewer')continue;
     if(/^(projects|middle east|miscellaneous|meeting)$/i.test(sheet.name)){
-      if(!normalised)normalised=blankTracker();readNormalised(sheet,normalised);continue;
+      normalised ??= blankTracker();readNormalised(sheet,normalised);continue;
     }
     const tracker=readWeekly(sheet);
     if(tracker){tracker.sourceName=file.name;result.push(tracker);}
@@ -168,9 +188,21 @@ export async function importWorkbook(file:File):Promise<Tracker[]> {
     if(meta?.sheets?.[i])mergeUrgency(sheet,meta.sheets[i]);
   });
   if(meta&&!meta.sheets&&result.length===1){
-    const sheet=result[0];sheet.urgentSections={...sheet.urgentSections,...meta.urgentSections};
-    meta.projects?.forEach((p,i)=>{if(sheet.projects[i]){sheet.projects[i].urgent ||= Boolean(p.urgent);sheet.projects[i].urgentLines=p.urgentLines??sheet.projects[i].urgentLines;}});
-    meta.misc?.forEach((m,i)=>{if(sheet.misc[i]){sheet.misc[i].urgent ||= Boolean(m.urgent);sheet.misc[i].urgentLines=m.urgentLines??sheet.misc[i].urgentLines;}});
+    const sheet=result[0];
+    if (!sheet) return result;
+    sheet.urgentSections={...sheet.urgentSections,...meta.urgentSections};
+    meta.projects?.forEach((project,i)=>{
+      const entry=sheet.projects[i];
+      if (!entry) return;
+      entry.urgent ||= Boolean(project.urgent);
+      entry.urgentLines=project.urgentLines??entry.urgentLines;
+    });
+    meta.misc?.forEach((item,i)=>{
+      const entry=sheet.misc[i];
+      if (!entry) return;
+      entry.urgent ||= Boolean(item.urgent);
+      entry.urgentLines=item.urgentLines??entry.urgentLines;
+    });
   }
   return result;
 }
@@ -203,11 +235,11 @@ function writeWeekly(book:ExcelJS.Workbook,tracker:Tracker,index:number):void {
   for(const [c,title] of [[3,'No'],[4,'Topic'],[5,'Attendee'],[7,'Time Allocated']] as const){sheet.getCell(r,c).value=title;header(sheet.getCell(r,c));}r++;
   for(const a of tracker.agenda){const row=sheet.getRow(r++);row.getCell(3).value=a.number;row.getCell(4).value=a.topic;row.getCell(5).value=a.attendee;row.getCell(7).value=a.time;styleRow(row,row.number,a.urgent);row.height=34;}
   r+=2;
-  function projectHeader(){for(let i=0;i<FIELDS.length;i++){const cell=sheet.getCell(r,i+2);cell.value=HEADERS[FIELDS[i]];header(cell);}r++;}
+  function projectHeader(){for(let i=0;i<FIELDS.length;i++){const field=FIELDS[i];if(!field)continue;const cell=sheet.getCell(r,i+2);cell.value=HEADERS[field];header(cell);}r++;}
   projectHeader();
   for(const p of tracker.projects.filter(p=>p.section==='projects')){
     const row=sheet.getRow(r++);
-    for(let i=0;i<FIELDS.length;i++){const f=FIELDS[i];row.getCell(i+2).value=f==='overview'||f==='updates'?styledNotes(p[f],p.urgentLines[f]):p[f];}
+    for(let i=0;i<FIELDS.length;i++){const f=FIELDS[i];if(!f)continue;row.getCell(i+2).value=f==='overview'||f==='updates'?styledNotes(p[f],p.urgentLines[f]):p[f];}
     styleRow(row,row.number,p.urgent);row.height=46;
   }
   r+=2;sheet.getCell(r,3).value='MIDDLE EAST REGION';header(sheet.getCell(r,3));r++;

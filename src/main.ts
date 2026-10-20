@@ -1,5 +1,5 @@
 import './styles.css';
-import { connectFolder, loadBuiltIn, loadConnectedFolder, loadRuntimeLatest, runtimeManifest, type FolderSelection } from './folder';
+import { connectFolder, loadConnectedFolder, loadRuntimeLatest, runtimeManifest, type FolderSelection } from './folder';
 import { canDiscard, setTrackers, state } from './state';
 import { autosavePreference, restoreDraft, saveDraft, setAutosavePreference } from './storage';
 import { exportWorkbook, importWorkbook } from './workbook';
@@ -61,7 +61,7 @@ $('#folder-btn').onclick = async () => {
 async function newestAvailable(): Promise<FolderSelection | null> {
   const live = await loadRuntimeLatest();
   if (live) return live;
-  return await loadConnectedFolder(true) ?? await loadBuiltIn();
+  return await loadConnectedFolder(true);
 }
 $('#refresh-btn').onclick = async () => {
   try { await openSelection(await newestAvailable()); }
@@ -107,7 +107,7 @@ $('#save-btn').onclick = async () => {
   } catch (error) { handleError(error); }
   finally { saveButton.disabled = false; saveButton.textContent = '↓ Export Excel'; }
 };
-// Prefer the saved editable workspace over a bundled snapshot to avoid overwriting work on refresh.
+// Restore an editable draft without replacing it when a newer live workbook appears.
 (async () => {
   try {
     const draft = await restoreDraft();
@@ -124,7 +124,5 @@ $('#save-btn').onclick = async () => {
     const connected = await loadConnectedFolder();
     if (connected) { await openSelection(connected, false); return; }
   } catch { /* Folder access may no longer be permitted. */ }
-  try { const bundled = await loadBuiltIn(); if (bundled) await openSelection(bundled, false); }
-  catch { /* No snapshot is a valid starting state. */ }
   await checkRuntime();
 })();

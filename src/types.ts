@@ -30,12 +30,11 @@ export function lines(text: string): string[] { return text.replace(/\r\n/g, '\n
 export function bullet(text: string): string { const t = text.trim(); return /^[•·●-]\s*/.test(t) ? t : `• ${t}`; }
 export function cleanText(v: unknown): string {
   if (v === null || v === undefined) return '';
-  if (typeof v === 'object') {
-    const obj = v as { text?: string; richText?: { text: string }[]; result?: unknown };
-    if (typeof obj.text === 'string') return obj.text;
-    if (Array.isArray(obj.richText)) return obj.richText.map(item => item.text).join('');
-    if (obj.result !== undefined) return cleanText(obj.result);
-  }
+  if (typeof v !== 'object') return String(v);
+  const obj = v as { text?: string; richText?: { text: string }[]; result?: unknown };
+  if (typeof obj.text === 'string') return obj.text;
+  if (Array.isArray(obj.richText)) return obj.richText.map(item => item.text).join('');
+  if (obj.result !== undefined) return cleanText(obj.result);
   return String(v);
 }
 /** Duplicate a weekly tracker while keeping the previous week's items intact. */
@@ -48,10 +47,10 @@ export function nextWeek(previous: Tracker): Tracker {
   const existing = field?.value ?? '';
   const uk = existing.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(.*)$/);
   const iso = existing.match(/^(\d{4})-(\d\d)-(\d\d)(.*)$/);
-  let date: Date;
-  if (uk) date = new Date(Date.UTC(+uk[3], +uk[2] - 1, +uk[1] + 7));
-  else if (iso) date = new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3] + 7));
-  else { date = new Date(); date.setDate(date.getDate() + 7); }
+  let date = new Date();
+  date.setDate(date.getDate() + 7);
+  if (uk) date = new Date(Date.UTC(Number(uk[3]), Number(uk[2]) - 1, Number(uk[1]) + 7));
+  if (iso) date = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]) + 7));
   const dd = String(date.getUTCDate()).padStart(2, '0');
   const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
   const yyyy = String(date.getUTCFullYear());

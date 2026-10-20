@@ -1,56 +1,55 @@
 # Tracker Viewer
 
-A fast TypeScript interface for weekly Projects & Enquiries Excel trackers, including the Meeting Details / Agenda, Projects, Middle East Region and Miscellaneous sections.
+A fast, local weekly Projects & Enquiries Excel tracker editor with a TypeScript frontend and a **Bun-powered standalone Windows executable**.
 
-## Windows installation and build
+## Install and build on Windows
 
-Install Node.js 22 or newer on the **build computer**. In PowerShell, use `npm.cmd` if PowerShell script execution is restricted:
+Install [Bun](https://bun.com/docs/installation) and, if you want the `npm.cmd` command, Node.js/npm on your development computer. Then, in PowerShell:
 
 ```powershell
-npm.cmd install; if ($LASTEXITCODE -eq 0) { npm.cmd run build }
+bun install; if ($LASTEXITCODE -eq 0) { npm.cmd run build }
 ```
 
-On Windows, `npm run build` automatically typechecks the TypeScript, builds the Vite static website, and creates **`release/TrackerViewer.exe`**. This is a Windows single-executable Node SEA containing its own JavaScript runtime, server and the compiled static site. **The executable does not need Node.js or npm on the computer that runs it.** Double-click the EXE to start a loopback-only HTTP server and automatically open the default browser at `http://127.0.0.1:59413/`. Keep the EXE running while using the page, and close its console window to stop the server. Windows may warn about an unsigned executable.
+You can also use `bun run build` directly. The build validates TypeScript, runs the no-nested-`if` / no-explicit-`any` / no-JavaScript-source guard, runs Bun tests, builds the Vite frontend and packages `release/TrackerViewer.exe` with Bun's compiler.
 
-For local development use `npm.cmd run dev`. To run the built `dist/` site using the standalone TypeScript source server and a local Node installation use `npm.cmd start`. Builds on Linux/macOS create `dist/`, but skip the Windows-specific packaging step. The CI workflow tests both platforms and publishes a Windows EXE as a workflow artefact.
+**The EXE does not require Bun, Node.js or npm on the computer running it.** Double-click it. It launches a local-only server on `127.0.0.1:59413`, opens your default browser automatically and has **no Command Prompt window** (`windows.hideConsole: true`). Windows may warn about an unsigned application. To stop the running process, use Task Manager. If startup fails, check `TrackerViewer.log` beside the executable, when writable.
 
-## Editing
+To run the app without packaging, build the frontend first and use `bun run start`. For frontend development use `bun run dev`.
 
-The workbook displays as one continuous page. Sidebar links jump to Meeting & Agenda, Projects & Enquiries, Middle East Region, and Miscellaneous. Meeting fields are laid out compactly at the top. Click a cell to edit. Enter saves a short field, while Enter inserts a bullet in multiline notes. Individual note lines, entire projects, agenda lines and complete sections may be marked urgent. Existing red Excel text is recognised as urgent during import.
+## Live folder discovery: no rebuild needed
 
-The **+ New sheet** action clones the previous weekly sheet, retaining its projects and notes, while advancing the meeting date seven days. Each week's data remains independently editable. **Export Excel** downloads a workbook containing a separate Excel worksheet for each week, including the meeting agenda. Styling and urgency flags survive the export. The application does not require Excel formulas.
+The server scans for the newest `.xlsx` **every time the page requests the current manifest**. By default it uses `public/` beside the EXE, or `public/` in the source project when running from that directory. Put Excel trackers there at any time. The browser checks for a changed tracker every 30 seconds and offers to open it if you have an edited draft, or automatically opens it if there are no unsaved edits to protect.
 
-## Live workbook discovery (no rebuild required)
+To configure another location, place an `.env` alongside `TrackerViewer.exe` (or in the project root) containing:
 
-Place trackers directly in `./public`, or configure a different folder in `.env` beside the project (or next to the EXE):
-
-```env
+```dotenv
 TRACKER_FOLDER="./public"
 ```
 
-The local server scans the folder **when the application starts**, whenever you click **Latest**, and every 30 seconds while open. It selects the `.xlsx` workbook with the newest file modification timestamp, ignoring Excel lockfiles starting with `~$` and the old bundled `latest-tracker.xlsx` file. It does not use dates embedded in the filenames. **Adding a workbook does not require another build.** The development server, production `.mts` server and Windows EXE use the same runtime scanner. The EXE will also find `../public` when running from the repository's `release` directory.
+Paths are relative to the directory containing that `.env`; absolute paths also work. Latest means **last modified timestamp**, not the date in the filename. Excel temporary files beginning `~$` and the old `latest-tracker.xlsx` snapshot are ignored. The scanner does not watch subfolders recursively.
 
-When a new workbook appears, the viewer opens it automatically if the workspace is empty or is showing an unchanged runtime tracker. If there are active edits or a restored auto-save draft, the viewer instead displays a **Newest** button to protect the existing work. Click it to confirm switching. The server listens only on `127.0.0.1`.
+A new workbook does **not** need another `npm run build`, nor a server restart. You can use **Latest** to request an immediate scan. In Chrome/Edge you may also use **Connect folder**, which gives the browser direct read-only folder access.
 
-The **Auto-save** slider is enabled by default and saves an editable draft to browser IndexedDB. It does **not** overwrite the source Excel file. Drafts are restored across page reloads, taking precedence over loading a different workbook without confirmation. Export Excel creates a new `.xlsx` file. **Connect folder** remains available for opening a browser-authorised folder manually.
+**Security:** Workbook files are not copied into `dist/` or embedded in the EXE. Vite's public-directory copying is disabled intentionally. The runtime HTTP endpoint is bound to loopback, so only local clients can request the current workbook. The editor auto-saves drafts to the browser's IndexedDB, and **Export Excel** downloads an edited workbook; the original workbook is not silently overwritten.
 
-For an entirely static deployment without the Node local server, the build-time workbook snapshot is a fallback. **Confidentiality:** a staged tracker is included in static build files and in the EXE; do not distribute such builds containing sensitive information. Leave the folder empty when building an executable intended for distribution, and point it at a folder when running it instead.
+## Interface
 
-## Structure
+Meeting details and agenda are displayed at the top, followed by Projects & Enquiries, Middle East Region and Miscellaneous in one continuous page. The left-hand menu jumps to each section. Edit cells and note lines directly, flag urgent items, use field filters, and duplicate the weekly sheet with the meeting date advanced by one week. Table cells retain their size during editing, and rows use alternating background colours.
 
-- `index.html`: semantic HTML page skeleton
-- `src/ui.ts`: continuous scroll UI, inline editing, notes, urgency, agenda, sheet tabs
-- `src/workbook.ts`: ExcelJS workbook parsing, red formatting recognition, multiple weekly sheets and export
-- `src/state.ts`: workspace state, filters, active sheet, dirty tracking
-- `src/types.ts`: typed tracker model and weekly-sheet cloning
-- `src/storage.ts`: persistent IndexedDB browser drafts and saved auto-save setting
-- `src/folder.ts`: browser folder access and newest file selection
-- `src/main.ts`: application initialisation, file import and export
-- `src/styles.css`: responsive design and zebra striping
-- `server.mts`: minimal TypeScript static server for `npm start`
-- `scripts/standalone.cjs`: browser-opening embedded server runtime used by Node SEA
-- `scripts/build-exe.mjs`: Windows Node SEA executable packaging
-- `scripts/runtime-tracker.cjs`: shared live local-folder discovery and HTTP endpoints
-- `scripts/stage-latest.mjs`: optional build-time snapshot fallback
+## Developer workflow
 
-The application serves only on `127.0.0.1` by default. Override with a valid TCP port using `PORT` if needed.
+```sh
+bun install
+bun run validate
+bun run build
+```
+
+Validation follows the guard and test conventions in `xmrig-automator`:
+
+- `bun run typecheck`: TypeScript `tsc --noEmit` using strict compiler flags.
+- `bun run guard`: bans explicit `any`, nested `if` statements and `.js` / `.cjs` / `.mjs` source files.
+- `bun test`: Bun unit tests for live folder discovery.
+
+The application source is `.ts` / `.mts`. Built frontend JavaScript output in `dist/` is generated and excluded from Git.
+
+Important files: `index.html`, `src/*`, `vite.config.ts`, `scripts/runtime-tracker.mts`, `scripts/standalone.mts`, `scripts/build-exe.mts`, `scripts/guard.mts`, `test/runtime-tracker.test.mts`.

@@ -99,9 +99,9 @@ function editCell(cell: HTMLElement): void {
     renderContent();
   };
   input.addEventListener('keydown',(event)=>{const e=event as KeyboardEvent;
-    if(e.key==='Escape') {cancelled=true;input.blur();}
-    else if(e.key==='Enter' && !multiline) {e.preventDefault();input.blur();}
-    else if(e.key==='Enter' && multiline && ['overview','updates','notes'].includes(field) && !e.shiftKey && !e.ctrlKey) {
+    if(e.key==='Escape') {cancelled=true;input.blur();return;}
+    if(e.key==='Enter' && !multiline) {e.preventDefault();input.blur();return;}
+    if(e.key==='Enter' && multiline && ['overview','updates','notes'].includes(field) && !e.shiftKey && !e.ctrlKey) {
       e.preventDefault(); input.setRangeText('\n• ',input.selectionStart ?? 0,input.selectionEnd ?? 0,'end');
     }
   });
@@ -122,8 +122,8 @@ function renderMeeting(): void {
     const row = button.closest<HTMLElement>('[data-agenda]'); const item = state.tracker.agenda.find(a=>a.id===row?.dataset.agenda);
     if(!item) return;
     if(button.dataset.agendaAction==='urgent') item.urgent=!item.urgent;
-    else if(window.confirm('Delete this agenda item?')) state.tracker.agenda=state.tracker.agenda.filter(a=>a.id!==item.id);
-    else return;
+    if(button.dataset.agendaAction==='delete' && !window.confirm('Delete this agenda item?')) return;
+    if(button.dataset.agendaAction==='delete') state.tracker.agenda=state.tracker.agenda.filter(a=>a.id!==item.id);
     changed();renderContent();
   });
 }
@@ -144,9 +144,9 @@ function renderTable(section: Section): void {
     const id=button.closest<HTMLElement>('[data-id]')?.dataset.id;
     const item=[...state.tracker.projects,...state.tracker.misc].find(x=>x.id===id);
     if(!item)return;
-    if(button.dataset.action==='urgent'){item.urgent=!item.urgent;changed();renderContent();}
-    else if(button.dataset.action==='details') showDetails(item);
-    else if(button.dataset.action==='delete'&&window.confirm('Delete this item?')) {
+    if(button.dataset.action==='urgent'){item.urgent=!item.urgent;changed();renderContent();return;}
+    if(button.dataset.action==='details') {showDetails(item);return;}
+    if(button.dataset.action==='delete'&&window.confirm('Delete this item?')) {
       state.tracker.projects=state.tracker.projects.filter(p=>p.id!==id); state.tracker.misc=state.tracker.misc.filter(m=>m.id!==id);
       changed();hideDetails();renderContent();
     }
@@ -162,7 +162,7 @@ function renderActions():void {
     holder.querySelectorAll<HTMLButtonElement>('[data-add]').forEach(button=>button.onclick=()=>{
       const kind=button.dataset.add;
       if(kind==='misc')state.tracker.misc.push({id:newId(),description:'',notes:'',urgent:false,urgentLines:[]});
-      else {const p=newProject(kind==='regional'?'regional':'projects');if(kind==='enquiry')p.projectNo='Enquiry';state.tracker.projects.push(p);}
+      if(kind!=='misc') {const p=newProject(kind==='regional'?'regional':'projects');p.projectNo=kind==='enquiry'?'Enquiry':p.projectNo;state.tracker.projects.push(p);}
       changed();renderContent();
       const first=$(`#${section}-table`).querySelector<HTMLElement>('tr:last-child td[data-field]');first?.click();
     });

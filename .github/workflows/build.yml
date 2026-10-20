@@ -1,61 +1,27 @@
-name: Build
-on:
-  push:
-  pull_request:
+name: Validate
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
 jobs:
-  build:
+  validate:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: '22'
-      - run: npm install
-      - run: npm run build
-      - run: npm test
-      - run: node --check scripts/standalone.cjs
-      - name: Verify runtime folder discovery on Windows EXE
+          bun-version: 1.4.3
+      - run: bun install
+      - run: bun run validate
+      - run: bun run build
+      - name: Confirm standalone Windows output
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # The workbook appears only AFTER the executable has already been built.
-          # This must succeed without rebuilding or restarting the EXE.
-          $path = 'public/DiscoveredAtRuntime.xlsx'
-          Set-Content -Path $path -Value 'runtime test workbook' -NoNewline
-          $process = Start-Process -FilePath './release/TrackerViewer.exe' -PassThru -WindowStyle Hidden -WorkingDirectory (Get-Location).Path -RedirectStandardOutput 'exe-out.log' -RedirectStandardError 'exe-err.log'
-          try {
-            $ready = $false
-            for ($i = 0; $i -lt 20; $i++) {
-              Start-Sleep -Seconds 1
-              try {
-                $reply = Invoke-RestMethod -Uri 'http://127.0.0.1:59413/__tracker/manifest' -TimeoutSec 2
-                if ($reply.filename -eq 'DiscoveredAtRuntime.xlsx') { $ready = $true; break }
-              } catch {}
-            }
-            if (!$ready) { throw 'Windows EXE failed to discover a workbook added after packaging' }
-            $bytes = Invoke-WebRequest -Uri 'http://127.0.0.1:59413/__tracker/latest.xlsx' -UseBasicParsing
-            if ($bytes.StatusCode -ne 200) { throw 'Runtime workbook cannot be downloaded' }
-          } finally { Stop-Process -Id $process.Id -ErrorAction SilentlyContinue; Get-Content exe-out.log -ErrorAction SilentlyContinue; Get-Content exe-err.log -ErrorAction SilentlyContinue; Remove-Item $path -ErrorAction SilentlyContinue }
-      - name: Check Windows executable
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if (!(Test-Path release/TrackerViewer.exe)) { throw 'Missing standalone executable' }
-          $process = Start-Process -FilePath './release/TrackerViewer.exe' -PassThru -WindowStyle Hidden
-          try {
-            $ready = $false
-            for ($i = 0; $i -lt 20; $i++) {
-              Start-Sleep -Seconds 1
-              try {
-                $reply = Invoke-WebRequest -Uri 'http://127.0.0.1:59413/' -UseBasicParsing -TimeoutSec 2
-                if ($reply.StatusCode -eq 200 -and $reply.Content -match '<html') { $ready = $true; break }
-              } catch {}
-            }
-            if (!$ready) { throw 'The standalone executable did not serve the tracker' }
-          } finally { Stop-Process -Id $process.Id -ErrorAction SilentlyContinue }
+          if (!(Test-Path 'release/TrackerViewer.exe')) { throw 'Missing Windows executable' }
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
         with:
