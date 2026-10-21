@@ -6,9 +6,9 @@ export interface FolderSelection { file: File; label: string; signature?: string
 export interface RuntimeManifest { filename: string; modified: number; size: number; signature: string; folder: string }
 /** A short weekly date label, with a visible suffix for duplicate dates. */
 export function workbookLabel(filename: string): string {
-  const date = filename.match(/\\((\\d{4})-(\\d{2})-(\\d{2})\\)(?:\\s*\\((\\d+)\\))?\\.xlsx$/i);
+  const date = filename.match(/\((\d{4})-(\d{2})-(\d{2})\)(?:\s*\((\d+)\))?\.xlsx$/i);
   return date ? `${date[3]}/${date[2]}/${date[1]}${date[4] ? ` (${date[4]})` : ''}`
-    : filename.replace(/\\.xlsx$/i, '');
+    : filename.replace(/\.xlsx$/i, '');
 }
 
 /** All workbooks in the configured TRACKER_FOLDER (not only the newest). */
