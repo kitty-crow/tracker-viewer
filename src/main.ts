@@ -241,30 +241,44 @@ $('#save-btn').onclick = async () => {
 };
 
 (async () => {
-  try {
-    const draft = await restoreDraft();
-    if (draft?.sheets?.length) {
-      setTrackers(draft.sheets, draft.loadingFrom || 'restored browser draft', draft.activeSheet,
-        draft.sourceSignature ?? null, draft.sourceRevision ?? null);
-      fileHandle = await recoverWritableHandle(state.tracker.sourceName).catch(() => null);
-      state.dirty = Boolean(draft.dirty);
-      revision = state.dirty ? 1 : 0;
-      savedRevision = 0;
-      restoredDraft = true;
-      render();
-      showSaveStatus();
-      void (state.dirty && state.autosave ? persist() : Promise.resolve());
-      await checkRuntime();
-      return;
-    }
-  } catch { /* Storage can be disabled. */ }
+  // The on-disk workbook is authoritative. IndexedDB is a recovery cache,
+  // so only prefer it when there are genuinely unsaved changes to recover.
+  const draft = await restoreDraft().catch(() => null);
+  const recoverUnsaved = Boolean(draft?.sheets?.length && draft.dirty)
+    && window.confirm('An unsaved recovery draft exists. Restore it instead of opening the latest Excel workbook?');
+  if (recoverUnsaved && draft) {
+    setTrackers(draft.sheets, draft.loadingFrom || 'restored browser draft', draft.activeSheet,
+      draft.sourceSignature ?? null, draft.sourceRevision ?? null);
+    fileHandle = await recoverWritableHandle(state.tracker.sourceName).catch(() => null);
+    state.dirty = true;
+    revision = 1;
+    savedRevision = 0;
+    restoredDraft = true;
+    render();
+    showSaveStatus();
+    await checkRuntime();
+    return;
+  }
   try {
     const runtime = await loadRuntimeLatest();
-    if (runtime) { await openSelection(runtime, false); return; }
+    if (runtime && await openSelection(runtime, false)) return;
   } catch (error) { console.warn('Live tracker lookup unavailable:', error); }
   try {
     const connected = await loadConnectedFolder();
-    if (connected) { await openSelection(connected, false); return; }
+    if (connected && await openSelection(connected, false)) return;
   } catch { /* Folder permission expired. */ }
+  // If neither disk source is available, keep the cached workspace accessible.
+  if (draft?.sheets?.length) {
+    setTrackers(draft.sheets, draft.loadingFrom || 'recovered browser cache', draft.activeSheet,
+      null, null);
+    state.dirty = Boolean(draft.dirty);
+    revision = state.dirty ? 1 : 0;
+    savedRevision = 0;
+    restoredDraft = true;
+    render();
+    showSaveStatus();
+    notify('No source workbook could be opened. Showing the recovery cache instead.', true);
+    return;
+  }
   await checkRuntime();
 })();

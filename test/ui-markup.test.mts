@@ -7,9 +7,10 @@ test('the HTML provides every statically referenced UI element', () => {
   const html = readFileSync(resolve(root, 'index.html'), 'utf8');
   const ui = readFileSync(resolve(root, 'src', 'ui.ts'), 'utf8');
   const main = readFileSync(resolve(root, 'src', 'main.ts'), 'utf8');
-  const ids = new Set([...html.matchAll(/\\bid="([^"]+)"/g), ...ui.matchAll(/\\bid="([^"]+)"/g)].map(match => match[1]));
-  const refs = [...ui.matchAll(/\\$\\(['"]#([a-z][\\w-]*)['"]\\)/gi), ...main.matchAll(/\\$\\(['"]#([a-z][\\w-]*)['"]\\)/gi)];
+  const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g), ...ui.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]));
+  const refs = [...ui.matchAll(/\$\(['"]#([a-z][\w-]*)['"]\)/gi), ...main.matchAll(/\$\(['"]#([a-z][\w-]*)['"]\)/gi)];
   const missing = [...new Set(refs.map(match => match[1] ?? '').filter(id => !ids.has(id)))];
+  expect(refs.length).toBeGreaterThan(30);
   expect(missing).toEqual([]);
   expect(html).toContain('id="delete-sheet"');
 });
