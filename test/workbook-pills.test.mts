@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { workbookLabel } from '../src/folder';
+import { workbookLabel } from '../src/files/WorkbookFolder';
 
 test('each weekly workbook gets a date pill label from its filename', () => {
   expect(workbookLabel('Weekly Projects Tracker (2026-10-19).xlsx')).toBe('19/10/2026');

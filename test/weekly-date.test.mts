@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { datedFilename } from '../scripts/create-tracker.mts';
-import { blankTracker, creationDate, newDatedWeek } from '../src/types';
+import { blankTracker, creationDate, newDatedWeek } from '../src/model/TrackerTypes';
 
 test('creating a week uses the day of creation and keeps a stable filename stem', () => {
   const prior = blankTracker();

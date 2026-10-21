@@ -1,5 +1,11 @@
-import { blankTracker, type Field, type Section, type Tracker } from './types';
-import type { RuntimeManifest } from './folder';
+/**
+ * Holds the active workbook and notifies the view when editable data changes.
+ *
+ * Keep file-system, workbook, comparison and UI concerns separate: callers
+ * rely on these interfaces to preserve the existing Excel editing workflow.
+ */
+import { blankTracker, type Field, type Section, type Tracker } from './TrackerTypes';
+import type { RuntimeManifest } from '../files/WorkbookFolder';
 export interface Filter { id: number; field: Field | 'description' | 'notes' | 'all'; value: string; }
 export interface State {
   tracker: Tracker; sheets: Tracker[]; activeSheet: number; folderFiles: RuntimeManifest[]; section: Section | 'meeting';
@@ -42,3 +48,20 @@ export function canDiscard(): boolean {
 window.addEventListener('beforeunload', event => {
   if (state.dirty && !state.autosave) { event.preventDefault(); event.returnValue = ''; }
 });
+
+
+/**
+ * Commands over the shared editable workspace. Views can retain an instance
+ * while the exported state reference remains stable across workbook switches.
+ */
+export class TrackerStateController {
+  get snapshot(): State { return state; }
+  open(sheets: Tracker[], source: string, index = sheets.length - 1, signature: string | null = null,
+    revision: { modified: number; size: number } | null = null): void {
+    setTrackers(sheets, source, index, signature, revision);
+  }
+  select(index: number): void { selectSheet(index); }
+  remove(index: number): boolean { return deleteSheet(index); }
+  markChanged(): void { changed(); }
+  canReplace(): boolean { return canDiscard(); }
+}

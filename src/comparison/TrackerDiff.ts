@@ -1,4 +1,10 @@
-import { FIELDS, HEADERS, type AgendaItem, type MeetingItem, type MiscItem, type Project, type Tracker } from './types';
+/**
+ * Compares weekly workbook snapshots using stable row identities instead of array positions.
+ *
+ * Keep file-system, workbook, comparison and UI concerns separate: callers
+ * rely on these interfaces to preserve the existing Excel editing workflow.
+ */
+import { FIELDS, HEADERS, type AgendaItem, type MeetingItem, type MiscItem, type Project, type Tracker } from '../model/TrackerTypes';
 
 export type DiffSection = 'Projects & enquiries' | 'Middle East region' | 'Miscellaneous' | 'Agenda' | 'Meeting details';
 export type DiffKind = 'added' | 'removed' | 'changed';
@@ -194,4 +200,13 @@ export function compareTrackers(before: Tracker, after: Tracker): DiffReport {
   return { entries, added: entries.filter(item => item.kind === 'added').length,
     removed: entries.filter(item => item.kind === 'removed').length,
     changed: entries.filter(item => item.kind === 'changed').length };
+}
+
+
+/** Read-only comparison service over two independent weekly tracker models. */
+export class TrackerDiffEngine {
+  compare(before: Tracker, after: Tracker): DiffReport { return compareTrackers(before, after); }
+  changedLines(field: string, before: string, after: string): DiffLine[] {
+    return changedLines(field, before, after);
+  }
 }

@@ -1,5 +1,11 @@
-import { state } from './state';
-import type { Tracker } from './types';
+/**
+ * Stores browser-side recovery drafts. The original Excel workbook remains authoritative.
+ *
+ * Keep file-system, workbook, comparison and UI concerns separate: callers
+ * rely on these interfaces to preserve the existing Excel editing workflow.
+ */
+import { state } from '../model/TrackerState';
+import type { Tracker } from '../model/TrackerTypes';
 const DB = 'tracker-viewer-workspace';
 const STORE = 'drafts';
 const SNAPSHOT = 'latest';
@@ -42,4 +48,17 @@ export async function saveDraft(): Promise<void> {
     tx.oncomplete = () => { database.close(); resolve(); };
     tx.onerror = () => { database.close(); reject(tx.error); };
   });
+}
+
+
+/**
+ * Browser recovery store, deliberately separate from the source workbook.
+ * A cached draft helps restore unsaved edits but is never treated as the
+ * authoritative replacement for the original XLSX file.
+ */
+export class TrackerDraftStore {
+  preferredAutosave(): boolean { return autosavePreference(); }
+  setAutosave(enabled: boolean): void { setAutosavePreference(enabled); }
+  restore(): Promise<Snapshot | null> { return restoreDraft(); }
+  save(): Promise<void> { return saveDraft(); }
 }

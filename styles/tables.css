@@ -1,0 +1,22 @@
+/* The shared table container must not force the workspace wider than its card. */
+.table-region { width: 100%; max-width: 100%; overflow-x: auto; }
+
+/* Project tables use a fixed grid with proportional columns. */
+.data-table:not(.misc-table) { width: 100%; min-width: 1160px; table-layout: fixed; }
+/* Column widths include the row action controls as the final column. */
+.data-table:not(.misc-table) colgroup col:nth-child(1) { width: 5% !important; }
+.data-table:not(.misc-table) colgroup col:nth-child(2) { width: 8% !important; }
+.data-table:not(.misc-table) colgroup col:nth-child(3) { width: 7% !important; }
+.data-table:not(.misc-table) colgroup col:nth-child(4) { width: 8% !important; }
+.data-table:not(.misc-table) colgroup col:nth-child(5) { width: 11% !important; }
+.data-table:not(.misc-table) colgroup col:nth-child(6) { width: 10% !important; }
+.data-table:not(.misc-table) colgroup col:nth-child(7) { width: 20.5% !important; }
+.data-table:not(.misc-table) colgroup col:nth-child(8) { width: 20.5% !important; }
+.data-table:not(.misc-table) colgroup col:nth-child(9) { width: 10% !important; }
+
+/* Rows and notes should grow to fit text, rather than clipping content. */
+.data-table tbody tr { height: auto; }
+.data-table .note-preview { max-height: none; overflow: visible; }
+.data-table td { overflow-wrap: anywhere; word-break: normal; }
+.data-table:not(.misc-table) td { padding: 12px 8px; }
+.data-table .row-action-buttons { display: flex; flex-wrap: wrap; gap: 5px; }

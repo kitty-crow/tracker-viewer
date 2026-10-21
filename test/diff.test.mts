@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
-import { blankTracker, newProject, type AgendaItem, type MiscItem, type Project } from '../src/types';
-import { changedLines, compareTrackers } from '../src/diff';
+import { blankTracker, newProject, type AgendaItem, type MiscItem, type Project } from '../src/model/TrackerTypes';
+import { changedLines, compareTrackers } from '../src/comparison/TrackerDiff';
 
 function record(overrides: Partial<Project> = {}): Project {
   return { ...newProject(), client: 'Acme', projectNo: 'P-230', well: 'Well Alpha',

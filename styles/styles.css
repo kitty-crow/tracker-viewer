@@ -1,0 +1,4 @@
+/* One Vite entry point for the CSS cascade. Keep each concern in its own file. */
+@import './base.css';
+@import './layout.css';
+@import './tables.css';

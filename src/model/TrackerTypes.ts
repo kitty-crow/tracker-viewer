@@ -1,3 +1,9 @@
+/**
+ * Defines the shape of the tracker and provides consistent identifiers and date conversions.
+ *
+ * Keep file-system, workbook, comparison and UI concerns separate: callers
+ * rely on these interfaces to preserve the existing Excel editing workflow.
+ */
 export const FIELDS = ['priority', 'client', 'country', 'projectNo', 'well', 'lead', 'overview', 'updates'] as const;
 export type Field = typeof FIELDS[number];
 export type NoteField = 'overview' | 'updates';
@@ -67,4 +73,21 @@ export function newDatedWeek(previous: Tracker, now = new Date()): Tracker {
 export function sheetLabel(tracker: Tracker, index: number): string {
   const date = tracker.meeting.find(m => /meeting date( and time)?/i.test(m.label))?.value;
   return date?.split(/[ ,]/)[0] || `Sheet ${index + 1}`;
+}
+
+
+/**
+ * Factory for all tracker-domain objects. It centralises defaults and date
+ * rules so views, file controllers and tests create identical structures.
+ * Standalone functions remain as compatible entry points for existing callers.
+ */
+export class TrackerFactory {
+  newId(): string { return newId(); }
+  newProject(section: 'projects' | 'regional' = 'projects'): Project { return newProject(section); }
+  emptyTracker(): Tracker { return blankTracker(); }
+  nextWeek(previous: Tracker, date = new Date()): Tracker { return newDatedWeek(previous, date); }
+  creationDate(date = new Date()): string { return creationDate(date); }
+  sheetLabel(tracker: Tracker, index: number): string { return sheetLabel(tracker, index); }
+  lines(text: string): string[] { return lines(text); }
+  bullet(text: string): string { return bullet(text); }
 }

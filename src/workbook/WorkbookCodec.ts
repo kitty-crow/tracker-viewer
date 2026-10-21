@@ -1,5 +1,11 @@
+/**
+ * Converts between XLSX worksheets and editable tracker models while respecting cell formatting.
+ *
+ * Keep file-system, workbook, comparison and UI concerns separate: callers
+ * rely on these interfaces to preserve the existing Excel editing workflow.
+ */
 import type ExcelJS from 'exceljs';
-import { blankTracker, cleanText, FIELDS, HEADERS, lines, newId, newProject, type Field, type MiscItem, type NoteField, type Project, type Section, type Tracker } from './types';
+import { blankTracker, cleanText, FIELDS, HEADERS, lines, newId, newProject, type Field, type MiscItem, type NoteField, type Project, type Section, type Tracker } from '../model/TrackerTypes';
 const getExcel = async () => { const mod = await import('exceljs/dist/exceljs.min.js'); return mod.default ?? mod; };
 const val = (sheet: ExcelJS.Worksheet, row: number, col: number): string => {
   const c = sheet.getRow(row).getCell(col);
@@ -265,4 +271,14 @@ export async function exportWorkbook(sheets:Tracker[]):Promise<Blob> {
   meta.state='veryHidden';
   const buffer=await book.xlsx.writeBuffer();
   return new Blob([buffer as unknown as BlobPart],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+
+
+/**
+ * XLSX model codec. Parsing and exporting are asynchronous because the large
+ * ExcelJS bundle is loaded only when workbook operations need it.
+ */
+export class WorkbookCodec {
+  read(file: File): Promise<Tracker[]> { return importWorkbook(file); }
+  write(sheets: Tracker[]): Promise<Blob> { return exportWorkbook(sheets); }
 }

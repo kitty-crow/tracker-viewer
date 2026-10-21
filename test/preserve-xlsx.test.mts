@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import JSZip from 'jszip';
-import { blankTracker } from '../src/types';
-import { preserveWorkbook, workbookPatches } from '../src/preserve-xlsx';
+import { blankTracker } from '../src/model/TrackerTypes';
+import { preserveWorkbook, workbookPatches } from '../src/workbook/WorkbookPreserver';
 
 const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';

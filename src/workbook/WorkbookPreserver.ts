@@ -1,6 +1,12 @@
+/**
+ * Patches mapped XML cells only, so the original XLSX layout and package parts stay intact.
+ *
+ * Keep file-system, workbook, comparison and UI concerns separate: callers
+ * rely on these interfaces to preserve the existing Excel editing workflow.
+ */
 import JSZip from 'jszip';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
-import { FIELDS, type Tracker, type OriginalCells } from './types';
+import { FIELDS, type Tracker, type OriginalCells } from '../model/TrackerTypes';
 
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
 const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -197,4 +203,15 @@ export async function preserveWorkbook(
     zip.file(file, updated);
   }
   return await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 }, mimeType: MIME });
+}
+
+
+/**
+ * Non-destructive XLSX editor. It preserves all unrelated package content
+ * and refuses writes that cannot be tied back to original mapped cells.
+ */
+export class WorkbookPreserver {
+  preserve(original: File, baseline: Tracker[], current: Tracker[]): Promise<Blob> {
+    return preserveWorkbook(original, baseline, current);
+  }
 }

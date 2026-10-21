@@ -1,3 +1,9 @@
+/**
+ * Connects to workbook sources, handles browser-granted file access and discovers server files.
+ *
+ * Keep file-system, workbook, comparison and UI concerns separate: callers
+ * rely on these interfaces to preserve the existing Excel editing workflow.
+ */
 const DB = 'tracker-viewer-folders';
 const STORE = 'settings';
 const KEY = 'directory';
@@ -158,4 +164,22 @@ export async function canWriteFile(handle: FileSystemFileHandle): Promise<boolea
     queryPermission?: (options: { mode: 'readwrite' }) => Promise<PermissionState>;
   };
   return typeof file.queryPermission !== 'function' || await file.queryPermission({ mode: 'readwrite' }) === 'granted';
+}
+
+
+/**
+ * File-source gateway. It intentionally distinguishes live server manifests
+ * from file-picker handles: only proven writable sources can be saved over.
+ */
+export class WorkbookFolderGateway {
+  list(): Promise<RuntimeManifest[]> { return runtimeFiles(); }
+  load(manifest: RuntimeManifest): Promise<FolderSelection> { return loadRuntimeFile(manifest); }
+  latest(manifest?: RuntimeManifest): Promise<FolderSelection | null> { return loadRuntimeLatest(manifest); }
+  connect(): Promise<FolderSelection | null> { return connectFolder(); }
+  connected(prompt = false): Promise<FolderSelection | null> { return loadConnectedFolder(prompt); }
+  chooseWritable(): Promise<FolderSelection | null> { return chooseWritableFile(); }
+  rememberHandle(handle: FileSystemFileHandle | null): Promise<void> { return storeWritableHandle(handle); }
+  recoverHandle(filename: string): Promise<FileSystemFileHandle | null> { return recoverWritableHandle(filename); }
+  canWrite(handle: FileSystemFileHandle): Promise<boolean> { return canWriteFile(handle); }
+  label(filename: string): string { return workbookLabel(filename); }
 }
