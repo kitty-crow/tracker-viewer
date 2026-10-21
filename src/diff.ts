@@ -68,7 +68,7 @@ export function changedLines(field: string, original: string, updated: string): 
     if (i < oldLines.length && j < newLines.length && oldLines[i] === newLines[j]) {
       i++; j++; continue;
     }
-    if (j < newLines.length && (i === oldLines.length || rows[i]![j + 1]! >= rows[i + 1]![j]!)) {
+    if (j < newLines.length && (i === oldLines.length || rows[i]![j + 1]! > rows[i + 1]![j]!)) {
       result.push({ sign: '+', field, value: newLines[j]! }); j++; continue;
     }
     result.push({ sign: '-', field, value: oldLines[i]! }); i++;
@@ -85,7 +85,7 @@ function fieldChanges(fields: [string, string, string][]): DiffLine[] {
 }
 function urgentChanges(before: boolean, after: boolean): DiffLine[] {
   return before === after ? [] : [
-    { sign: before ? '-' : '+', field: 'Urgent', value: before ? 'Marked urgent' : 'Marked urgent' },
+    { sign: before ? '-' : '+', field: 'Urgent', value: 'Marked urgent' },
   ];
 }
 function lineUrgencyChanges(field: string, before: number[], after: number[]): DiffLine[] {
