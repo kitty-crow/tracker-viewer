@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test';
 import JSZip from 'jszip';
-import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmSync, writeFileSync, readdirSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { handleSaveRequest, SAVE_PATH, trustedOrigin } from '../scripts/save-tracker.mts';
-import { latestTracker } from '../scripts/runtime-tracker.mts';
+import { latestTracker, folderTrackers } from '../scripts/runtime-tracker.mts';
 
 const ORIGIN = 'http://127.0.0.1:59413';
 const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -115,4 +115,27 @@ test('LAN clients may save via a local interface address when the listener binds
   expect(trustedOrigin('http://192.168.50.149:59414', ORIGIN, '192.168.50.149:59414', assigned)).toBe(false);
   expect(trustedOrigin('https://192.168.50.149:59413', ORIGIN, '192.168.50.149:59413', assigned)).toBe(false);
   expect(trustedOrigin(undefined, ORIGIN, '192.168.50.149:59413', assigned)).toBe(false);
+});
+
+test('saving an older selected workbook never overwrites the newer one', async () => {
+  const { root, workbook: previous } = fixture();
+  const latestPath = join(root, 'public', 'New week.xlsx');
+  writeFileSync(latestPath, zipped);
+  const later = new Date(Date.now() + 120000);
+  utimesSync(latestPath, later, later);
+  const server = await serve(root);
+  try {
+    const options = { root, cwd: root, trackerFolder: '' };
+    expect(latestTracker(options)?.filename).toBe('New week.xlsx');
+    const older = folderTrackers(options).find(file => file.filename === 'Week.xlsx');
+    const updated = await makeWorkbook('older week updated');
+    const headers = { Origin: ORIGIN, 'Content-Type': MIME,
+      'X-Tracker-Signature': encodeURIComponent(older?.signature ?? '') };
+    const result = await fetch(`${server.origin}${SAVE_PATH}`, {
+      method: 'PUT', headers, body: Uint8Array.from(updated),
+    });
+    expect(result.status).toBe(200);
+    expect(readFileSync(previous).toString('hex')).toBe(updated.toString('hex'));
+    expect(readFileSync(latestPath).toString('hex')).toBe(zipped.toString('hex'));
+  } finally { await server.close(); rmSync(root, { recursive: true, force: true }); }
 });

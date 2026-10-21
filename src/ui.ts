@@ -1,5 +1,6 @@
 import { bullet, FIELDS, HEADERS, lines, newId, newProject, sheetLabel, type Field, type MiscItem, type NoteField, type Project, type Section, type AgendaItem } from './types';
 import { changed, deleteSheet, selectSheet, state } from './state';
+import { workbookLabel } from './folder';
 const $ = <T extends HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 const html = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]!));
 const SECTIONS: Section[] = ['projects', 'regional', 'misc'];
@@ -57,12 +58,6 @@ function highlightNavigation(): void {
   $('#current-section').textContent = activeSection==='meeting' ? 'Meeting & agenda' : SECTION_NAME[activeSection as Section];
 }
 /** Workbook pills correspond to files, worksheet pills to tabs within one file. */
-function fileLabel(filename: string): string {
-  const date = filename.match(/\((\d{4})-(\d{2})-(\d{2})\)(?:\s*\((\d+)\))?\.xlsx$/i);
-  return date ? `${date[3]}/${date[2]}/${date[1]}${date[4] ? ` (${date[4]})` : ''}`
-    : filename.replace(/\.xlsx$/i, '');
-}
-
 export function renderSheetTabs(): void {
   const deleteButton = $('#delete-sheet') as HTMLButtonElement;
   deleteButton.disabled = state.sheets.length <= 1;
@@ -72,7 +67,7 @@ export function renderSheetTabs(): void {
     const active = Boolean(state.sourceSignature) && file.filename === state.tracker.sourceName;
     return `<button type="button" class="sheet-tab ${active ? 'active' : ''}"
       data-folder-file="${html(file.filename)}" title="${html(file.filename)}"
-      aria-current="${active ? 'page' : 'false'}">${html(fileLabel(file.filename))}${active ? ' <span class="sheet-current">●</span>' : ''}</button>`;
+      aria-current="${active ? 'page' : 'false'}">${html(workbookLabel(file.filename))}${active ? ' <span class="sheet-current">●</span>' : ''}</button>`;
   }).join('');
   const worksheets = state.sheets.map((sheet, i) =>
     `<button type="button" class="sheet-tab ${i === state.activeSheet ? 'active' : ''}"
