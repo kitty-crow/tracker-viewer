@@ -62,7 +62,9 @@ export function renderSheetTabs(): void {
   const deleteButton = $('#delete-sheet') as HTMLButtonElement;
   deleteButton.disabled = state.sheets.length <= 1;
   deleteButton.title = deleteButton.disabled ? 'At least one worksheet must remain' : 'Delete the selected worksheet';
-  const files = state.folderFiles;
+  // Stable chronological order, regardless of which workbook was edited last.
+  const files = [...state.folderFiles].sort((a, b) => a.filename.localeCompare(b.filename, undefined,
+    { numeric: true, sensitivity: 'base' }));
   const fileButtons = files.map(file => {
     const active = Boolean(state.sourceSignature) && file.filename === state.tracker.sourceName;
     return `<button type="button" class="sheet-tab ${active ? 'active' : ''}"

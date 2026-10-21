@@ -16,6 +16,28 @@ You can also use `bun run build` directly. If that exact `release/TrackerViewer.
 
 To run the app without packaging, build the frontend first and use `bun run start`. For frontend development use `bun run dev`.
 
+## Browse every weekly workbook in the tracker folder
+
+The pill bar lists **all** `.xlsx` workbooks directly inside `TRACKER_FOLDER` (excluding Excel `~# Tracker Viewer
+
+A fast, local weekly Projects & Enquiries Excel tracker editor with a TypeScript frontend and a **Bun-powered standalone Windows executable**.
+
+## Install and build on Windows
+
+Install [Bun](https://bun.com/docs/installation) and, if you want the `npm.cmd` command, Node.js/npm on your development computer. Then, in PowerShell:
+
+```powershell
+bun install; if ($LASTEXITCODE -eq 0) { npm.cmd run build }
+```
+
+You can also use `bun run build` directly. If that exact `release/TrackerViewer.exe` is already running, the build stops it before packaging, because Windows cannot replace a running executable. The build validates TypeScript, runs the no-nested-`if` / no-explicit-`any` / no-JavaScript-source guard, runs Bun tests, builds the Vite frontend and packages `release/TrackerViewer.exe` with Bun's compiler.
+
+**The EXE does not require Bun, Node.js or npm on the computer running it.** Double-click it. By default it listens on `127.0.0.1:59413`, creates a Windows Internet Shortcut (`TrackerViewer.url`) beside the EXE, and opens that **shortcut file** using your default browser; it has **no Command Prompt window** (`windows.hideConsole: true`). Windows may warn about an unsigned application. Relaunching the EXE finds the process holding the local port, confirms it is another `TrackerViewer.exe`, terminates only that older application and then starts a fresh server. If another program owns the port, it is left untouched and the error is logged. If the EXE directory is not writable, the shortcut is created under `%LOCALAPPDATA%\TrackerViewer`. To stop the app, click **Quit application** in the top bar; this saves the browser draft when auto-save is enabled and shuts down the local server. Alternatively, use Task Manager or run `Get-Process TrackerViewer -ErrorAction SilentlyContinue | Stop-Process` in PowerShell. If the browser does not launch, open `http://127.0.0.1:59413/` manually. If startup fails, check `TrackerViewer.log` beside the executable, when writable.
+
+To run the app without packaging, build the frontend first and use `bun run start`. For frontend development use `bun run dev`.
+
+ temporary files), ordered by filename/date. Each date pill switches to that file; multiple worksheets inside a file have a separate worksheet row. Auto-save always targets the selected source workbook, not whichever workbook was most recently modified. Switching away from unsaved changes waits for auto-save to finish, or is blocked with a warning. The bar refreshes with the folder scan every 30 seconds and after creating a dated file. Choosing an older file pauses automatic switching to new weeks; click **Latest** to resume. 
+
 ## Live folder discovery: no rebuild needed
 
 The server scans for the newest `.xlsx` **every time the page requests the current manifest**. By default it uses `public/` beside the EXE, or `public/` in the source project when running from that directory. Put Excel trackers there at any time. The browser checks for a changed tracker every 30 seconds and offers to open it if you have an edited draft, or automatically opens it if there are no unsaved edits to protect.

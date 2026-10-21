@@ -377,7 +377,8 @@ async function prepareRecoveryTemplate(): Promise<void> {
     const files = await runtimeFiles();
     state.folderFiles = files;
     renderSheetTabs();
-    const runtime = files[0] ? await loadRuntimeFile(files[0]) : await loadRuntimeLatest();
+    const newest = files[0];
+    const runtime = newest ? await loadRuntimeFile(newest) : await loadRuntimeLatest();
     if (runtime && await openSelection(runtime, false)) return;
   } catch (error) { console.warn('Live tracker lookup unavailable:', error); }
   try {
