@@ -71,6 +71,10 @@ function parseTable(sheet:ExcelJS.Worksheet,header:{row:number;cols:Partial<Reco
       if(f==='overview'||f==='updates')p.urgentLines[f]=red;
       if(f!=='overview'&&f!=='updates'&&red.length)p.urgent=true;
     }
+    p._original = { sheet: sheet.name, cells: Object.fromEntries(FIELDS.flatMap(f => {
+      const col = header.cols[f];
+      return col ? [[f, cellAt(sheet, r, col).address]] : [];
+    })) };
     dest.push(p);
   }
 }
@@ -112,13 +116,13 @@ function parseMeeting(sheet:ExcelJS.Worksheet,until:number,tracker:Tracker):void
   for(let r=2;r<until;r++){
     const label=val(sheet,r,2).trim();
     if(!label||/^(meeting details|agenda|priority)$/i.test(label)||label.length>80)continue;
-    tracker.meeting.push({label,value:val(sheet,r,4)});
+    tracker.meeting.push({label,value:val(sheet,r,4),_original:{sheet:sheet.name,cells:{label:cellAt(sheet,r,2).address,value:cellAt(sheet,r,4).address}}});
   }
   for(let r=1;r<until;r++){
     if(!/^no\.?$/i.test(val(sheet,r,3))||!/^topic$/i.test(val(sheet,r,4)))continue;
     for(let a=r+1;a<until;a++){
       const number=val(sheet,a,3).trim();if(!number)continue;
-      tracker.agenda.push({id:newId(),number,topic:val(sheet,a,4),attendee:val(sheet,a,5),time:val(sheet,a,7)||val(sheet,a,6),urgent:[3,4,5,7].some(c=>flaggedLines(cellAt(sheet,a,c),val(sheet,a,c)).length>0)});
+      tracker.agenda.push({id:newId(),number,topic:val(sheet,a,4),attendee:val(sheet,a,5),time:val(sheet,a,7)||val(sheet,a,6),urgent:[3,4,5,7].some(c=>flaggedLines(cellAt(sheet,a,c),val(sheet,a,c)).length>0),_original:{sheet:sheet.name,cells:{number:cellAt(sheet,a,3).address,topic:cellAt(sheet,a,4).address,attendee:cellAt(sheet,a,5).address,time:cellAt(sheet,a,val(sheet,a,7)?7:6).address}}});
     }
     break;
   }
@@ -135,7 +139,7 @@ function readMeetingSheet(sheet: ExcelJS.Worksheet, tracker: Tracker): void {
   for (let row=2; row<=sheet.rowCount; row++) {
     const label = val(sheet,row,1);
     if (!label) continue;
-    tracker.meeting.push({ label, value: val(sheet,row,2) });
+    tracker.meeting.push({ label, value: val(sheet,row,2), _original: { sheet: sheet.name, cells: { label: cellAt(sheet,row,1).address, value: cellAt(sheet,row,2).address } } });
   }
 }
 function readMiscSheet(sheet: ExcelJS.Worksheet, tracker: Tracker): void {
@@ -143,7 +147,7 @@ function readMiscSheet(sheet: ExcelJS.Worksheet, tracker: Tracker): void {
     const description=val(sheet,row,1);
     if (!description) continue;
     const notes=val(sheet,row,2);
-    tracker.misc.push({id:newId(),description,notes,urgent:flaggedLines(cellAt(sheet,row,1),description).length>0,urgentLines:flaggedLines(cellAt(sheet,row,2),notes)});
+    tracker.misc.push({id:newId(),description,notes,urgent:flaggedLines(cellAt(sheet,row,1),description).length>0,urgentLines:flaggedLines(cellAt(sheet,row,2),notes),_original:{sheet:sheet.name,cells:{description:cellAt(sheet,row,1).address,notes:cellAt(sheet,row,2).address}}});
   }
 }
 function readNormalised(sheet:ExcelJS.Worksheet,tracker:Tracker):void {

@@ -6,14 +6,15 @@ export const HEADERS: Record<Field, string> = {
   priority: 'Priority', client: 'Client', country: 'Country', projectNo: 'Project No', well: 'Well / Project',
   lead: 'Lead', overview: 'Overview', updates: 'Updates'
 };
-export interface Project {
+export interface OriginalCells { sheet: string; cells: Record<string, string> }
+export interface Project { _original?: OriginalCells;
   id: string; section: 'projects' | 'regional'; urgent: boolean; priority: string; client: string; country: string;
   projectNo: string; well: string; lead: string; overview: string; updates: string;
   urgentLines: Record<NoteField, number[]>;
 }
-export interface MiscItem { id: string; description: string; notes: string; urgent: boolean; urgentLines: number[]; }
-export interface MeetingItem { label: string; value: string; }
-export interface AgendaItem { id: string; number: string; topic: string; attendee: string; time: string; urgent: boolean; }
+export interface MiscItem { _original?: OriginalCells; id: string; description: string; notes: string; urgent: boolean; urgentLines: number[]; }
+export interface MeetingItem { label: string; value: string; _original?: OriginalCells; }
+export interface AgendaItem { _original?: OriginalCells; id: string; number: string; topic: string; attendee: string; time: string; urgent: boolean; }
 export interface Tracker {
   projects: Project[]; misc: MiscItem[]; meeting: MeetingItem[]; agenda: AgendaItem[];
   urgentSections: Record<Section, boolean>; sourceName: string;
