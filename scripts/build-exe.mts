@@ -6,25 +6,25 @@ const root = resolve(import.meta.dir, '..');
 const dist = resolve(root, 'dist');
 const release = resolve(root, 'release');
 if (!existsSync(resolve(dist, 'index.html'))) throw new Error('Build the frontend before packaging the executable.');
-if (process.platform !== 'win32') {
-  console.log('Standalone Windows executable is packaged on Windows; static frontend build completed.');
-  process.exit(0);
-}
 mkdirSync(release, { recursive: true });
 const executable = resolve(release, 'TrackerViewer.exe');
-// Windows locks a running EXE. Stop only this exact release binary, not other installations.
+// Only Windows locks a running executable. The helper returns immediately on Linux/WSL.
 stopRunningRelease(executable);
 const result = await Bun.build({
   entrypoints: [resolve(root, 'scripts', 'standalone.mts')],
   compile: {
+    // Cross-compile to Windows from native Windows or Linux/WSL.
+    target: 'bun-windows-x64',
     outfile: executable,
     assets: [dist],
-    windows: {
-      hideConsole: true,
-      title: 'Tracker Viewer',
-      description: 'Local weekly project tracker',
-      version: '1.0.0',
-    },
+    windows: process.platform === 'win32'
+      ? {
+          hideConsole: true,
+          title: 'Tracker Viewer',
+          description: 'Local weekly project tracker',
+          version: '1.0.0',
+        }
+      : { hideConsole: true },
   },
   // Vite already fingerprints assets. Avoid a second hash on embedded filenames.
   naming: { asset: '[name].[ext]' },
