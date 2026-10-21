@@ -22,6 +22,8 @@ const result = await Bun.build({
       version: '1.0.0',
     },
   },
+  // Vite already fingerprints assets. Avoid a second hash on embedded filenames.
+  naming: { asset: '[name].[ext]' },
   minify: true,
   target: 'bun',
 });
