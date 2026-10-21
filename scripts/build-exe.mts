@@ -8,8 +8,9 @@ const release = resolve(root, 'release');
 if (!existsSync(resolve(dist, 'index.html'))) throw new Error('Build the frontend before packaging the executable.');
 mkdirSync(release, { recursive: true });
 const executable = resolve(release, 'TrackerViewer.exe');
-// Only Windows locks a running executable. The helper returns immediately on Linux/WSL.
-stopRunningRelease(executable);
+// Only Windows locks a running executable. On a fresh build there is no
+// prior binary to stop: skip slow process enumeration (also fixes CI timeout).
+if (existsSync(executable)) stopRunningRelease(executable);
 const result = await Bun.build({
   entrypoints: [resolve(root, 'scripts', 'standalone.mts')],
   compile: {
