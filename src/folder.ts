@@ -4,6 +4,26 @@ const KEY = 'directory';
 const FILE_KEY = 'writable-file';
 export interface FolderSelection { file: File; label: string; signature?: string; handle?: FileSystemFileHandle }
 export interface RuntimeManifest { filename: string; modified: number; size: number; signature: string; folder: string }
+/** All workbooks in the configured TRACKER_FOLDER (not only the newest). */
+export async function runtimeFiles(): Promise<RuntimeManifest[]> {
+  const reply = await fetch('./__tracker/files', { cache: 'no-store' });
+  if (reply.status === 404) return [];
+  if (!reply.ok) throw new Error(`Tracker folder scan failed (${reply.status}).`);
+  return await reply.json() as RuntimeManifest[];
+}
+
+/** Read a particular workbook with revision validation, never silently choose the newest. */
+export async function loadRuntimeFile(manifest: RuntimeManifest): Promise<FolderSelection> {
+  const params = new URLSearchParams({ name: manifest.filename, signature: manifest.signature });
+  const reply = await fetch(`./__tracker/file?${params}`, { cache: 'no-store' });
+  if (!reply.ok) throw new Error(`Could not open ${manifest.filename} (${reply.status}); refresh the folder list.`);
+  const bytes = await reply.blob();
+  return { file: new File([bytes], manifest.filename, {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    lastModified: manifest.modified,
+  }), label: `live folder: ${manifest.folder}`, signature: manifest.signature };
+}
+
 /** Queries the local server afresh, rather than inspecting a build-time snapshot. */
 export async function runtimeManifest(): Promise<RuntimeManifest | null> {
   const reply = await fetch('./__tracker/manifest', { cache: 'no-store' });

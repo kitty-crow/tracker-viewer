@@ -80,3 +80,9 @@ html{scroll-behaviour:smooth;scroll-padding-top:90px}
 #runtime-update{max-width:300px;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:1450px){.meeting-layout{grid-template-columns:1fr}.agenda-row{grid-template-columns:35px minmax(0,1fr) 105px 75px 68px}}
 @media(max-width:760px){.agenda-row{grid-template-columns:26px minmax(0,1fr) 68px 56px 60px;gap:6px;padding:9px;font-size:11px}.agenda-row-head{font-size:9px}}
+
+/* Each pill in the first row represents one actual XLSX file on disk. */
+#sheet-tabs{display:flex;flex-direction:column;align-items:flex-start;gap:7px;min-width:0;width:100%}
+.workbook-tabs,.worksheet-tabs{display:flex;flex-wrap:wrap;gap:7px;align-items:center;max-width:100%}
+.workbook-tabs .sheet-tab{white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.worksheet-tabs:not(:first-child){padding-top:7px;border-top:1px solid #e0e9f3;width:100%}

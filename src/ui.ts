@@ -9,6 +9,7 @@ let urgentOnly = false;
 let filterSequence = 0;
 let toastTimer: number | undefined;
 let activeSection = 'meeting';
+let onSelectWorkbook: ((filename: string) => void) | null = null;
 const sectionData = (section: Section): (Project | MiscItem)[] => section === 'misc' ? state.tracker.misc : state.tracker.projects.filter(p => p.section === section);
 function matchItem(item: Project | MiscItem): boolean {
   if (urgentOnly && !item.urgent && !(project(item) ? item.urgentLines.overview.length || item.urgentLines.updates.length : item.urgentLines.length)) return false;
@@ -55,15 +56,40 @@ function highlightNavigation(): void {
   document.querySelectorAll<HTMLElement>('[data-nav]').forEach(el => el.classList.toggle('active', el.dataset.nav===activeSection));
   $('#current-section').textContent = activeSection==='meeting' ? 'Meeting & agenda' : SECTION_NAME[activeSection as Section];
 }
-function renderSheetTabs(): void {
+/** Workbook pills correspond to files, worksheet pills to tabs within one file. */
+function fileLabel(filename: string): string {
+  const date = filename.match(/\((\d{4})-(\d{2})-(\d{2})\)(?:\s*\((\d+)\))?\.xlsx$/i);
+  return date ? `${date[3]}/${date[2]}/${date[1]}${date[4] ? ` (${date[4]})` : ''}`
+    : filename.replace(/\.xlsx$/i, '');
+}
+
+export function renderSheetTabs(): void {
   const deleteButton = $('#delete-sheet') as HTMLButtonElement;
   deleteButton.disabled = state.sheets.length <= 1;
-  deleteButton.title = deleteButton.disabled ? 'At least one weekly sheet must remain' : 'Delete the selected weekly sheet';
-  $('#sheet-tabs').innerHTML = state.sheets.map((sheet,i) => `<button class="sheet-tab ${i===state.activeSheet?'active':''}" data-sheet="${i}" type="button">${html(sheetLabel(sheet,i))}${i===state.activeSheet?' <span class="sheet-current">●</span>':''}</button>`).join('');
-  $('#sheet-tabs').querySelectorAll<HTMLButtonElement>('[data-sheet]').forEach(button => button.onclick = () => {
-    selectSheet(Number(button.dataset.sheet)); changed(); render();
+  deleteButton.title = deleteButton.disabled ? 'At least one worksheet must remain' : 'Delete the selected worksheet';
+  const files = state.folderFiles;
+  const fileButtons = files.map(file => {
+    const active = Boolean(state.sourceSignature) && file.filename === state.tracker.sourceName;
+    return `<button type="button" class="sheet-tab ${active ? 'active' : ''}"
+      data-folder-file="${html(file.filename)}" title="${html(file.filename)}"
+      aria-current="${active ? 'page' : 'false'}">${html(fileLabel(file.filename))}${active ? ' <span class="sheet-current">●</span>' : ''}</button>`;
+  }).join('');
+  const worksheets = state.sheets.map((sheet, i) =>
+    `<button type="button" class="sheet-tab ${i === state.activeSheet ? 'active' : ''}"
+      data-sheet="${i}">${html(sheetLabel(sheet, i))}${i === state.activeSheet ? ' <span class="sheet-current">●</span>' : ''}</button>`).join('');
+  $('#sheet-tabs').innerHTML = (files.length
+    ? `<div class="workbook-tabs" role="group" aria-label="Excel files in tracker folder">${fileButtons}</div>`
+    : '') + (state.sheets.length > 1 || !files.length
+    ? `<div class="worksheet-tabs" role="group" aria-label="Worksheets in selected Excel file">${worksheets}</div>`
+    : '');
+  $('#sheet-tabs').querySelectorAll<HTMLButtonElement>('[data-folder-file]').forEach(button => {
+    button.onclick = () => onSelectWorkbook?.(button.dataset.folderFile ?? '');
+  });
+  $('#sheet-tabs').querySelectorAll<HTMLButtonElement>('[data-sheet]').forEach(button => {
+    button.onclick = () => { selectSheet(Number(button.dataset.sheet)); render(); };
   });
 }
+
 function renderStats(): void {
   const all = state.tracker.projects;
   const urgent = all.filter(p=>p.urgent||p.urgentLines.overview.length||p.urgentLines.updates.length).length + state.tracker.misc.filter(m=>m.urgent||m.urgentLines.length).length;
@@ -224,7 +250,8 @@ function renderContent():void {
   renderSheetTabs();renderNavigation();renderMeeting();renderStats();renderActions();renderTables();
 }
 export function render():void {renderContent();renderFilters();}
-export function setupUI():void {
+export function setupUI(onFileSelect: (filename: string) => void):void {
+  onSelectWorkbook = onFileSelect;
   $('#search-input').addEventListener('input',e=>{state.query=(e.target as HTMLInputElement).value;renderTables();});
   $('#urgent-only').addEventListener('change',e=>{urgentOnly=(e.target as HTMLInputElement).checked;renderTables();});
   $('#filter-add').addEventListener('click',()=>{state.filters.push({id:++filterSequence,field:'all',value:''});renderFilters();$('#filters').querySelector<HTMLInputElement>('input:last-of-type')?.focus();});
