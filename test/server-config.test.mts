@@ -45,3 +45,15 @@ test('rejects invalid IP addresses and ports', () => {
     expect(() => listenerConfig({ appRoot: root, cwd: root, environment: {} })).toThrow('PORT');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('release executable reads the parent project .env', () => {
+  const root = mkdtempSync(join(tmpdir(), 'tracker-parent-env-'));
+  try {
+    const release = join(root, 'release');
+    mkdirSync(release);
+    writeFileSync(join(root, '.env'), ['IP=0.0.0.0', 'PORT=59413', 'TRACKER_FOLDER="./public"', ''].join('\n'));
+    expect(listenerConfig({ exeDir: release, appRoot: release, cwd: release, environment: {} })).toEqual({
+      ip: '0.0.0.0', port: 59413, browserUrl: 'http://127.0.0.1:59413/',
+    });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
