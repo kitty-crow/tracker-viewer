@@ -24,15 +24,61 @@ function reportFailure(error: unknown): void {
   console.error(message);
 }
 
+function fallbackBrowser(url: string): void {
+  const child = spawn('explorer.exe', [url], { windowsHide: true, detached: true, stdio: 'ignore' });
+  child.on('error', reportFailure);
+  child.on('exit', code => { if (code !== 0) reportFailure(new Error(`Explorer browser launch returned ${code}`)); });
+  child.unref();
+}
+
 function openBrowser(url: string): void {
   if (process.platform !== 'win32') return;
-  const child = spawn('cmd.exe', ['/d', '/s', '/c', `start "" "${url}"`], { windowsHide: true, detached: true, stdio: 'ignore' });
-  child.on('error', reportFailure);
+  // Start-Process uses the Windows URL association, so the user's default browser opens.
+  // Unlike "cmd /c start", a failed launch provides an exit code for fallback.
+  const child = spawn('powershell.exe', [
+    '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden',
+    '-Command', `Start-Process -FilePath '${url}'`,
+  ], { windowsHide: true, detached: true, stdio: 'ignore' });
+  let fallbackStarted = false;
+  const fallback = (): void => {
+    if (fallbackStarted) return;
+    fallbackStarted = true;
+    fallbackBrowser(url);
+  };
+  child.on('error', error => { reportFailure(error); fallback(); });
+  child.on('exit', code => { if (code !== 0) fallback(); });
   child.unref();
 }
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid TCP port');
+
+// Only this application's same-origin page may request shutdown.
+// JSON-only POST prevents an unrelated website from submitting a form to quit.
+function handleAppRequest(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse): boolean {
+  let pathname: string;
+  try { pathname = new URL(req.url ?? '/', 'http://localhost').pathname; }
+  catch { return false; }
+  if (pathname === '/__app/status' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+      .end(JSON.stringify({ canQuit: standalone }));
+    return true;
+  }
+  if (pathname !== '/__app/quit') return false;
+  if (req.method !== 'POST') { res.writeHead(405, { Allow: 'POST' }).end(); return true; }
+  const sameOrigin = req.headers.origin === `http://${hostname}:${port}`;
+  const json = req.headers['content-type']?.split(';')[0] === 'application/json';
+  if (!sameOrigin || !json) { res.writeHead(403).end('Forbidden'); return true; }
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+    .end('{"stopping":true}');
+  res.once('finish', () => {
+    server.close();
+    setTimeout(() => process.exit(0), 200).unref();
+  });
+  return true;
+}
+
 const server = createServer((req, res) => {
+  if (handleAppRequest(req, res)) return;
   if (handleTrackerRequest(req, res, standalone ? { root: appRoot, exeDir: executableDir } : { root: appRoot })) return;
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }).end(); return; }
   let pathname: string;

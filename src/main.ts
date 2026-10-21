@@ -49,6 +49,27 @@ toggle.addEventListener('change', () => {
   setAutosavePreference(toggle.checked);
   if (state.autosave) void persist(); else renderSaveStatus();
 });
+// The stop control is shown only for the packaged executable.
+const quitButton = $('#quit-app') as HTMLButtonElement;
+void (async () => {
+  try {
+    const response = await fetch('./__app/status', { cache: 'no-store' });
+    if (!response.ok) return;
+    const status = (await response.json()) as { canQuit?: boolean };
+    quitButton.hidden = status.canQuit !== true;
+  } catch { /* Development mode has no executable to stop. */ }
+})();
+quitButton.onclick = async () => {
+  if (!window.confirm('Stop Tracker Viewer? Export to Excel first if you need a workbook copy.')) return;
+  try {
+    await persist();
+    const response = await fetch('./__app/quit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    if (!response.ok) throw new Error('Could not stop the local server.');
+    document.body.innerHTML = '<main style="font:16px system-ui;padding:3rem;max-width:40rem;margin:auto"><h1>Tracker Viewer stopped</h1><p>You can close this browser tab.</p></main>';
+  } catch (error) { handleError(error); }
+};
 $('#open-btn').onclick = () => ($('#file-input') as HTMLInputElement).click();
 $('#file-input').addEventListener('change', async event => {
   const input = event.target as HTMLInputElement;

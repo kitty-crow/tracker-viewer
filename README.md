@@ -12,7 +12,7 @@ bun install; if ($LASTEXITCODE -eq 0) { npm.cmd run build }
 
 You can also use `bun run build` directly. The build validates TypeScript, runs the no-nested-`if` / no-explicit-`any` / no-JavaScript-source guard, runs Bun tests, builds the Vite frontend and packages `release/TrackerViewer.exe` with Bun's compiler.
 
-**The EXE does not require Bun, Node.js or npm on the computer running it.** Double-click it. It launches a local-only server on `127.0.0.1:59413`, opens your default browser automatically and has **no Command Prompt window** (`windows.hideConsole: true`). Windows may warn about an unsigned application. To stop the running process, use Task Manager. If startup fails, check `TrackerViewer.log` beside the executable, when writable.
+**The EXE does not require Bun, Node.js or npm on the computer running it.** Double-click it. It launches a local-only server on `127.0.0.1:59413`, opens your default browser automatically and has **no Command Prompt window** (`windows.hideConsole: true`). Windows may warn about an unsigned application. To stop the app, click **Quit application** in the top bar; this saves the browser draft when auto-save is enabled and shuts down the local server. Alternatively, use Task Manager or run `Get-Process TrackerViewer -ErrorAction SilentlyContinue | Stop-Process` in PowerShell. If the browser does not launch, open `http://127.0.0.1:59413/` manually. If startup fails, check `TrackerViewer.log` beside the executable, when writable.
 
 To run the app without packaging, build the frontend first and use `bun run start`. For frontend development use `bun run dev`.
 
