@@ -116,14 +116,37 @@ const server = createServer((req, res) => {
   createReadStream(target).pipe(res);
 });
 
-server.on('error', error => { reportFailure(error); process.exitCode = 1; });
-try { replaceExistingViewer(port, process.execPath); }
-catch (error) { reportFailure(error); process.exit(1); }
-server.listen(port, hostname, () => {
+const maxPortRetries = 3;
+let portRetries = 0;
+
+function isPortCollision(error: unknown): boolean {
+  const typed = error as { code?: string; message?: string };
+  return typed?.code === 'EADDRINUSE' || /port\\s*\\d+\\s+in\\s+use|address already in use|failed to start server/i.test(typed?.message ?? String(error));
+}
+
+function onStarted(): void {
   const url = settings.browserUrl;
   console.log(`Tracker Viewer: ${url}`);
   if (standalone && !embeddedAsset('index.html')) {
     reportFailure(new Error(`No embedded index.html found. Embedded asset names: ${embeddedFiles.map(file => file.name).join(', ')}`));
   }
   if (standalone) openShortcut(process.execPath, url, reportFailure);
-});
+}
+function startListening(): void {
+  try { server.listen(port, hostname, onStarted); }
+  catch (error) { handleListenFailure(error); }
+}
+function handleListenFailure(error: unknown): void {
+  if (!standalone || process.platform !== 'win32' || !isPortCollision(error) || portRetries >= maxPortRetries) {
+    reportFailure(new Error(`Unable to start Tracker Viewer at ${hostname}:${port}: ${String(error)}`));
+    process.exit(1);
+  }
+  portRetries++;
+  try { replaceExistingViewer(port, process.execPath); }
+  catch (replacementError) { reportFailure(replacementError); process.exit(1); }
+  setTimeout(startListening, 250);
+}
+server.on('error', handleListenFailure);
+try { replaceExistingViewer(port, process.execPath); }
+catch (error) { reportFailure(error); process.exit(1); }
+startListening();
