@@ -1,55 +1,153 @@
 import './styles.css';
-import { connectFolder, loadConnectedFolder, loadRuntimeLatest, runtimeManifest, type FolderSelection } from './folder';
+import { canWriteFile, chooseWritableFile, connectFolder, loadConnectedFolder, loadRuntimeLatest, recoverWritableHandle, runtimeManifest, storeWritableHandle, type FolderSelection } from './folder';
 import { canDiscard, setTrackers, state } from './state';
 import { autosavePreference, restoreDraft, saveDraft, setAutosavePreference } from './storage';
 import { exportWorkbook, importWorkbook } from './workbook';
-import { notify, render, setSaved, setupUI } from './ui';
+import { notify, render, setupUI } from './ui';
+
 const $ = <T extends HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 let pendingSave: number | undefined;
+let saveRunning: Promise<void> | null = null;
+let revision = 0;
+let savedRevision = 0;
+let fileHandle: FileSystemFileHandle | null = null;
 let restoredDraft = false;
 let loadedFromRuntime = false;
 let checkingRuntime = false;
+let saveError = '';
 const runtimeButton = $('#runtime-update') as HTMLButtonElement;
+
+function showSaveStatus(): void {
+  const status = $('#save-status');
+  status.classList.toggle('dirty', state.dirty || Boolean(saveError));
+  if (saveError) { status.textContent = `⚠ ${saveError}`; return; }
+  if (!state.autosave) { status.textContent = state.dirty ? '● Unsaved Excel changes' : 'Auto-save off'; return; }
+  if (state.dirty) {
+    status.textContent = state.sourceSignature || fileHandle ? 'Saving Excel…' : '⚠ No writable Excel source';
+    return;
+  }
+  status.textContent = state.sourceSignature || fileHandle ? '✓ Excel file saved' : 'No writable Excel source';
+}
+
+async function writeHandle(handle: FileSystemFileHandle, blob: Blob): Promise<void> {
+  if (!(await canWriteFile(handle))) throw new Error('Excel write permission expired; reopen the workbook to grant access');
+  const current = await handle.getFile();
+  const baseline = state.sourceRevision;
+  if (!baseline || current.lastModified !== baseline.modified || current.size !== baseline.size) {
+    throw new Error('Excel file changed outside Tracker Viewer; reopen it before saving');
+  }
+  const stream = await handle.createWritable();
+  try { await stream.write(blob); await stream.close(); }
+  catch (error) { await stream.abort().catch(() => undefined); throw error; }
+  const updated = await handle.getFile();
+  state.sourceRevision = { modified: updated.lastModified, size: updated.size };
+}
+
+async function writeBack(blob: Blob): Promise<void> {
+  if (fileHandle) { await writeHandle(fileHandle, blob); return; }
+  const signature = state.sourceSignature;
+  if (!signature) throw new Error('This workbook was opened read-only. Use Open file or Connect folder to grant write access');
+  const response = await fetch('./__tracker/save', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'X-Tracker-Signature': encodeURIComponent(signature) },
+    body: blob,
+  });
+  const result = await response.json() as { signature?: string; error?: string };
+  if (!response.ok || !result.signature) throw new Error(result.error ?? `Excel save failed (${response.status})`);
+  state.sourceSignature = result.signature;
+}
+
+/** Serialize writes and retry with the freshest snapshot if edits arrive in-flight. */
+async function flushExcel(): Promise<void> {
+  if (saveRunning) return saveRunning;
+  saveRunning = (async () => {
+    while (state.autosave && savedRevision < revision) {
+      const writingRevision = revision;
+      if (!fileHandle && !state.sourceSignature) {
+        saveError = 'Open a writable Excel workbook';
+        break;
+      }
+      showSaveStatus();
+      const sheets = structuredClone(state.sheets);
+      const blob = await exportWorkbook(sheets);
+      await writeBack(blob);
+      savedRevision = writingRevision;
+      state.dirty = savedRevision !== revision;
+      saveError = '';
+      await saveDraft();
+      showSaveStatus();
+    }
+  })().catch(async error => {
+    saveError = error instanceof Error ? error.message : String(error);
+    state.dirty = true;
+    try { await saveDraft(); } catch { /* Recovery storage may be unavailable. */ }
+    showSaveStatus();
+    notify(`Excel save failed: ${saveError}`, true);
+  }).finally(() => { saveRunning = null; });
+  return saveRunning;
+}
+
 async function persist(): Promise<void> {
-  if (!state.autosave) return;
-  try { await saveDraft(); renderSaveStatus(); } catch (error) { notify(`Could not auto-save: ${String(error)}`, true); }
+  try { await saveDraft(); }
+  catch (error) { notify(`Recovery cache unavailable: ${String(error)}`, true); }
+  if (state.autosave) await flushExcel();
 }
-function renderSaveStatus(): void {
-  $('#save-status').textContent = state.autosave ? 'Draft saved locally' : (state.dirty ? '● Not exported' : 'Ready');
-}
+
 window.addEventListener('tracker-changed', () => {
+  revision++;
+  saveError = '';
   if (pendingSave) window.clearTimeout(pendingSave);
-  if (!state.autosave) { renderSaveStatus(); return; }
-  $('#save-status').textContent = 'Saving draft…';
-  pendingSave = window.setTimeout(() => { void persist(); }, 450);
+  showSaveStatus();
+  if (state.autosave) pendingSave = window.setTimeout(() => { void persist(); }, 350);
+  else void saveDraft();
 });
+
 async function openSelection(selection: FolderSelection | null, checkDiscard = true): Promise<boolean> {
   if (!selection) { notify('No .xlsx tracker was found in that location.', true); return false; }
-  if (checkDiscard && (restoredDraft ? !window.confirm('Replace your saved browser draft with another tracker? Export first if needed.') : !canDiscard())) return false;
-  state.busy = true; $('#source-title').textContent = `Opening ${selection.file.name}…`;
+  if (saveRunning) await saveRunning;
+  if (checkDiscard && (restoredDraft ? !window.confirm('Replace your saved browser draft? The current Excel workbook should be saved first.') : !canDiscard())) return false;
+  state.busy = true;
+  $('#source-title').textContent = `Opening ${selection.file.name}…`;
   try {
-    const trackers = await importWorkbook(selection.file);
-    setTrackers(trackers, selection.label, trackers.length - 1, selection.signature ?? null);
-    restoredDraft = false; loadedFromRuntime = selection.signature !== undefined; runtimeButton.hidden = true;
-    render(); await persist(); renderSaveStatus();
+    const sheets = await importWorkbook(selection.file);
+    fileHandle = selection.handle ?? null;
+    await storeWritableHandle(fileHandle).catch(() => undefined);
+    const fileRevision = fileHandle ? { modified: selection.file.lastModified, size: selection.file.size } : null;
+    setTrackers(sheets, selection.label, sheets.length - 1, selection.signature ?? null, fileRevision);
+    revision = 0;
+    savedRevision = 0;
+    saveError = '';
+    restoredDraft = false;
+    loadedFromRuntime = selection.signature !== undefined;
+    runtimeButton.hidden = true;
+    render();
+    await saveDraft();
+    showSaveStatus();
     notify(`${state.tracker.projects.length} projects and ${state.tracker.misc.length} miscellaneous items loaded.`);
     return true;
-  } catch (error) { notify(error instanceof Error ? error.message : String(error), true); render(); return false; }
-  finally { state.busy = false; }
+  } catch (error) {
+    notify(error instanceof Error ? error.message : String(error), true);
+    render();
+    return false;
+  } finally { state.busy = false; }
 }
+
 function handleError(error: unknown): void {
   if (error instanceof DOMException && error.name === 'AbortError') return;
   notify(error instanceof Error ? error.message : String(error), true);
 }
+
 state.autosave = autosavePreference();
 setupUI();
+showSaveStatus();
 const toggle = $('#autosave-toggle') as HTMLInputElement;
 toggle.checked = state.autosave;
 toggle.addEventListener('change', () => {
   setAutosavePreference(toggle.checked);
-  if (state.autosave) void persist(); else renderSaveStatus();
+  if (state.autosave) void persist();
+  showSaveStatus();
 });
-// The stop control is shown only for the packaged executable.
+
 const quitButton = $('#quit-app') as HTMLButtonElement;
 void (async () => {
   try {
@@ -57,12 +155,13 @@ void (async () => {
     if (!response.ok) return;
     const status = (await response.json()) as { canQuit?: boolean };
     quitButton.hidden = status.canQuit !== true;
-  } catch { /* Development mode has no executable to stop. */ }
+  } catch { /* In development no compiled executable is running. */ }
 })();
 quitButton.onclick = async () => {
-  if (!window.confirm('Stop Tracker Viewer? Export to Excel first if you need a workbook copy.')) return;
+  if (!window.confirm('Stop Tracker Viewer? Pending changes will be written to Excel first.')) return;
+  await persist();
+  if (state.dirty) { notify('Excel still has unsaved changes. Resolve the save error before quitting.', true); return; }
   try {
-    await persist();
     const response = await fetch('./__app/quit', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
     });
@@ -70,11 +169,21 @@ quitButton.onclick = async () => {
     document.body.innerHTML = '<main style="font:16px system-ui;padding:3rem;max-width:40rem;margin:auto"><h1>Tracker Viewer stopped</h1><p>You can close this browser tab.</p></main>';
   } catch (error) { handleError(error); }
 };
-$('#open-btn').onclick = () => ($('#file-input') as HTMLInputElement).click();
+
+$('#open-btn').onclick = async () => {
+  try {
+    const selected = await chooseWritableFile();
+    if (selected) { await openSelection(selected); return; }
+    ($('#file-input') as HTMLInputElement).click();
+  } catch (error) { handleError(error); }
+};
 $('#file-input').addEventListener('change', async event => {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0]; input.value = '';
-  if (file) await openSelection({ file, label: 'local file' });
+  if (file) {
+    await openSelection({ file, label: 'read-only file selection' });
+    notify('This file picker cannot save to the original. Use Chrome/Edge Open file or Connect folder for writable access.', true);
+  }
 });
 $('#folder-btn').onclick = async () => {
   try { await openSelection(await connectFolder()); } catch (error) { handleError(error); }
@@ -85,22 +194,20 @@ async function newestAvailable(): Promise<FolderSelection | null> {
   return await loadConnectedFolder(true);
 }
 $('#refresh-btn').onclick = async () => {
-  try { await openSelection(await newestAvailable()); }
-  catch (error) { handleError(error); }
+  try { await openSelection(await newestAvailable()); } catch (error) { handleError(error); }
 };
 runtimeButton.onclick = async () => {
-  try { await openSelection(await loadRuntimeLatest()); }
-  catch (error) { handleError(error); }
+  try { await openSelection(await loadRuntimeLatest()); } catch (error) { handleError(error); }
 };
-/** Never overwrite an active or restored draft when a newer file appears. */
+
 async function checkRuntime(): Promise<void> {
-  if (checkingRuntime || state.busy) return;
+  if (checkingRuntime || state.busy || saveRunning || state.dirty) return;
   checkingRuntime = true;
   try {
     const latest = await runtimeManifest();
     if (!latest || latest.signature === state.sourceSignature) { runtimeButton.hidden = true; return; }
     const empty = !state.tracker.sourceName && !state.tracker.projects.length && !state.tracker.misc.length;
-    if (!restoredDraft && !state.dirty && (loadedFromRuntime || empty)) {
+    if (!restoredDraft && (loadedFromRuntime || empty)) {
       await openSelection(await loadRuntimeLatest(latest), false);
       return;
     }
@@ -114,29 +221,43 @@ window.setInterval(() => { void checkRuntime(); }, 30000);
 
 $('#save-btn').onclick = async () => {
   if (!state.sheets.some(sheet => sheet.projects.length || sheet.misc.length || sheet.meeting.length)) { notify('Open a tracker or create an item before exporting.', true); return; }
-  const saveButton = $('#save-btn') as HTMLButtonElement;
-  saveButton.disabled = true; saveButton.textContent = 'Exporting…';
+  const button = $('#save-btn') as HTMLButtonElement;
+  button.disabled = true;
+  button.textContent = 'Exporting…';
   try {
     const blob = await exportWorkbook(state.sheets);
     const date = new Date().toISOString().slice(0, 10);
     const base = (state.tracker.sourceName || 'Projects Tracker').replace(/\.xlsx$/i, '').replace(/[\\/:*?"<>|]/g, '_');
-    const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
-    anchor.href = url; anchor.download = `${base} - edited ${date}.xlsx`;
-    document.body.appendChild(anchor); anchor.click(); anchor.remove();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${base} - edited ${date}.xlsx`;
+    document.body.appendChild(anchor);
+    anchor.click(); anchor.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 30000);
-    setSaved(); notify('Workbook exported.');
+    notify('Workbook copy exported.');
   } catch (error) { handleError(error); }
-  finally { saveButton.disabled = false; saveButton.textContent = '↓ Export Excel'; }
+  finally { button.disabled = false; button.textContent = '↓ Export Excel'; }
 };
-// Restore an editable draft without replacing it when a newer live workbook appears.
+
 (async () => {
   try {
     const draft = await restoreDraft();
     if (draft?.sheets?.length) {
-      setTrackers(draft.sheets, draft.loadingFrom || 'restored browser draft', draft.activeSheet, draft.sourceSignature ?? null);
-      restoredDraft = true; render(); renderSaveStatus(); await checkRuntime(); return;
+      setTrackers(draft.sheets, draft.loadingFrom || 'restored browser draft', draft.activeSheet,
+        draft.sourceSignature ?? null, draft.sourceRevision ?? null);
+      fileHandle = await recoverWritableHandle(state.tracker.sourceName).catch(() => null);
+      state.dirty = Boolean(draft.dirty);
+      revision = state.dirty ? 1 : 0;
+      savedRevision = 0;
+      restoredDraft = true;
+      render();
+      showSaveStatus();
+      void (state.dirty && state.autosave ? persist() : Promise.resolve());
+      await checkRuntime();
+      return;
     }
-  } catch { /* Private browsing or a disabled IndexedDB store. */ }
+  } catch { /* Storage can be disabled. */ }
   try {
     const runtime = await loadRuntimeLatest();
     if (runtime) { await openSelection(runtime, false); return; }
@@ -144,6 +265,6 @@ $('#save-btn').onclick = async () => {
   try {
     const connected = await loadConnectedFolder();
     if (connected) { await openSelection(connected, false); return; }
-  } catch { /* Folder access may no longer be permitted. */ }
+  } catch { /* Folder permission expired. */ }
   await checkRuntime();
 })();

@@ -1,7 +1,8 @@
 const DB = 'tracker-viewer-folders';
 const STORE = 'settings';
 const KEY = 'directory';
-export interface FolderSelection { file: File; label: string; signature?: string }
+const FILE_KEY = 'writable-file';
+export interface FolderSelection { file: File; label: string; signature?: string; handle?: FileSystemFileHandle }
 export interface RuntimeManifest { filename: string; modified: number; size: number; signature: string; folder: string }
 /** Queries the local server afresh, rather than inspecting a build-time snapshot. */
 export async function runtimeManifest(): Promise<RuntimeManifest | null> {
@@ -57,18 +58,20 @@ async function canRead(handle: FileSystemDirectoryHandle, prompt: boolean): Prom
 }
 async function newest(folder: FileSystemDirectoryHandle): Promise<FolderSelection | null> {
   let latest: File | null = null;
+  let selectedHandle: FileSystemFileHandle | null = null;
   // Browser File System Access API, Chromium secure contexts only.
   for await (const entry of (folder as FileSystemDirectoryHandle & { values(): AsyncIterable<FileSystemHandle> }).values()) {
-    if (entry.kind !== 'file' || !/\.xlsx$/i.test(entry.name) || entry.name.startsWith('~$')) continue;
-    const file = await (entry as FileSystemFileHandle).getFile();
-    if (!latest || file.lastModified > latest.lastModified) latest = file;
+    if (entry.kind !== 'file' || !/\.xlsx$/i.test(entry.name) || entry.name.startsWith('~$') || entry.name.toLowerCase() === 'latest-tracker.xlsx') continue;
+    const handle = entry as FileSystemFileHandle;
+    const file = await handle.getFile();
+    if (!latest || file.lastModified > latest.lastModified) { latest = file; selectedHandle = handle; }
   }
-  return latest ? { file: latest, label: folder.name } : null;
+  return latest ? { file: latest, label: folder.name, ...(selectedHandle ? { handle: selectedHandle } : {}) } : null;
 }
 export async function connectFolder(): Promise<FolderSelection | null> {
-  const picker = (window as Window & { showDirectoryPicker?: (options?: { mode: 'read' }) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
+  const picker = (window as Window & { showDirectoryPicker?: (options?: { mode: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
   if (!picker) throw new Error('Folder access requires a recent Chromium-based browser (Chrome or Edge) on HTTPS or localhost. You can still open an Excel file directly.');
-  const folder = await picker({ mode: 'read' });
+  const folder = await picker({ mode: 'readwrite' });
   if (!(await canRead(folder, true))) throw new Error('Folder read permission was not granted.');
   await saveFolder(folder);
   return newest(folder);
@@ -77,4 +80,55 @@ export async function loadConnectedFolder(prompt = false): Promise<FolderSelecti
   const folder = await storedFolder();
   if (!folder || !(await canRead(folder, prompt))) return null;
   return newest(folder);
+}
+
+/** Use a real filesystem handle: the ordinary file input cannot write to its source. */
+export async function chooseWritableFile(): Promise<FolderSelection | null> {
+  const picker = (window as Window & {
+    showOpenFilePicker?: (options?: { multiple?: boolean; types?: { description: string; accept: Record<string, string[]> }[] }) => Promise<FileSystemFileHandle[]>;
+  }).showOpenFilePicker;
+  if (!picker) return null;
+  const [handle] = await picker({ multiple: false, types: [{ description: 'Excel tracker', accept: {
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+  } }] });
+  if (!handle) return null;
+  const writable = handle as FileSystemFileHandle & {
+    requestPermission?: (options: { mode: 'readwrite' }) => Promise<PermissionState>;
+  };
+  const permission = typeof writable.requestPermission === 'function'
+    ? await writable.requestPermission({ mode: 'readwrite' }) : 'granted';
+  if (permission !== 'granted') throw new Error('Write access to the Excel workbook was not granted.');
+  return { file: await handle.getFile(), handle, label: 'writable local workbook' };
+}
+
+export async function storeWritableHandle(handle: FileSystemFileHandle | null): Promise<void> {
+  const db = await database();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    if (handle) tx.objectStore(STORE).put(handle, FILE_KEY);
+    else tx.objectStore(STORE).delete(FILE_KEY);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+export async function recoverWritableHandle(filename: string): Promise<FileSystemFileHandle | null> {
+  const db = await database();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const request = tx.objectStore(STORE).get(FILE_KEY);
+    request.onsuccess = () => {
+      const handle = request.result as FileSystemFileHandle | undefined;
+      resolve(handle?.name === filename ? handle : null);
+    };
+    request.onerror = () => reject(request.error);
+    tx.oncomplete = () => db.close();
+  });
+}
+
+export async function canWriteFile(handle: FileSystemFileHandle): Promise<boolean> {
+  const file = handle as FileSystemFileHandle & {
+    queryPermission?: (options: { mode: 'readwrite' }) => Promise<PermissionState>;
+  };
+  return typeof file.queryPermission !== 'function' || await file.queryPermission({ mode: 'readwrite' }) === 'granted';
 }

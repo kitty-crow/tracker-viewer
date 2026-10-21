@@ -12,7 +12,7 @@ bun install; if ($LASTEXITCODE -eq 0) { npm.cmd run build }
 
 You can also use `bun run build` directly. The build validates TypeScript, runs the no-nested-`if` / no-explicit-`any` / no-JavaScript-source guard, runs Bun tests, builds the Vite frontend and packages `release/TrackerViewer.exe` with Bun's compiler.
 
-**The EXE does not require Bun, Node.js or npm on the computer running it.** Double-click it. It launches a local-only server on `127.0.0.1:59413`, creates a Windows Internet Shortcut (`TrackerViewer.url`) beside the EXE, and opens that **shortcut file** using your default browser; it has **no Command Prompt window** (`windows.hideConsole: true`). Windows may warn about an unsigned application. Relaunching the EXE finds the process holding the local port, confirms it is another `TrackerViewer.exe`, terminates only that older application and then starts a fresh server. If another program owns the port, it is left untouched and the error is logged. If the EXE directory is not writable, the shortcut is created under `%LOCALAPPDATA%\TrackerViewer`. To stop the app, click **Quit application** in the top bar; this saves the browser draft when auto-save is enabled and shuts down the local server. Alternatively, use Task Manager or run `Get-Process TrackerViewer -ErrorAction SilentlyContinue | Stop-Process` in PowerShell. If the browser does not launch, open `http://127.0.0.1:59413/` manually. If startup fails, check `TrackerViewer.log` beside the executable, when writable.
+**The EXE does not require Bun, Node.js or npm on the computer running it.** Double-click it. By default it listens on `127.0.0.1:59413`, creates a Windows Internet Shortcut (`TrackerViewer.url`) beside the EXE, and opens that **shortcut file** using your default browser; it has **no Command Prompt window** (`windows.hideConsole: true`). Windows may warn about an unsigned application. Relaunching the EXE finds the process holding the local port, confirms it is another `TrackerViewer.exe`, terminates only that older application and then starts a fresh server. If another program owns the port, it is left untouched and the error is logged. If the EXE directory is not writable, the shortcut is created under `%LOCALAPPDATA%\TrackerViewer`. To stop the app, click **Quit application** in the top bar; this saves the browser draft when auto-save is enabled and shuts down the local server. Alternatively, use Task Manager or run `Get-Process TrackerViewer -ErrorAction SilentlyContinue | Stop-Process` in PowerShell. If the browser does not launch, open `http://127.0.0.1:59413/` manually. If startup fails, check `TrackerViewer.log` beside the executable, when writable.
 
 To run the app without packaging, build the frontend first and use `bun run start`. For frontend development use `bun run dev`.
 
@@ -23,14 +23,18 @@ The server scans for the newest `.xlsx` **every time the page requests the curre
 To configure another location, place an `.env` alongside `TrackerViewer.exe` (or in the project root) containing:
 
 ```dotenv
+IP=127.0.0.1
+PORT=59413
 TRACKER_FOLDER="./public"
 ```
+
+`IP` and `PORT` are read when the server starts, without recompiling the EXE. The default browser shortcut and port-replacement check use the configured address and port. `bun run dev` and `bun run start` use the same settings. Use `127.0.0.1` for local-only access; setting a LAN address or `0.0.0.0` exposes the tracker and its spreadsheets to other devices on that network without authentication. Restart the app after changing either setting.
 
 Paths are relative to the directory containing that `.env`; absolute paths also work. Latest means **last modified timestamp**, not the date in the filename. Excel temporary files beginning `~$` and the old `latest-tracker.xlsx` snapshot are ignored. The scanner does not watch subfolders recursively.
 
 A new workbook does **not** need another `npm run build`, nor a server restart. You can use **Latest** to request an immediate scan. In Chrome/Edge you may also use **Connect folder**, which gives the browser direct read-only folder access.
 
-**Security:** Workbook files are not copied into `dist/` or embedded in the EXE. Vite's public-directory copying is disabled intentionally. The runtime HTTP endpoint is bound to loopback, so only local clients can request the current workbook. The editor auto-saves drafts to the browser's IndexedDB, and **Export Excel** downloads an edited workbook; the original workbook is not silently overwritten.
+**Security:** Workbook files are not copied into `dist/` or embedded in the EXE. Vite's public-directory copying is disabled intentionally. The runtime HTTP endpoint is bound to loopback, so only local clients can request the current workbook. Auto-save (enabled by default) writes changes asynchronously back to the original `.xlsx` selected from the runtime folder or through a browser file handle. A recovery draft is also cached in IndexedDB. The first runtime write creates a `.tracker-viewer-original.bak` copy beside the source; saves are written to a temporary file and replaced atomically. Concurrent/external edits or locked files stop the write and leave the draft intact, with an on-screen error. **Export Excel** is optional and downloads a separate copy. Normal workbook edits and adding/removing weekly worksheets update the actual opened `.xlsx` file without requiring Export.
 
 ## Interface
 
@@ -53,3 +57,11 @@ Validation follows the guard and test conventions in `xmrig-automator`:
 The application source is `.ts` / `.mts`. Built frontend JavaScript output in `dist/` is generated and excluded from Git.
 
 Important files: `index.html`, `src/*`, `vite.config.ts`, `scripts/runtime-tracker.mts`, `scripts/standalone.mts`, `scripts/build-exe.mts`, `scripts/guard.mts`, `test/runtime-tracker.test.mts`.
+
+## Writing directly to Excel files
+
+The **Auto-save** toggle is on by default and now performs real, asynchronous file writes after cell edits, urgency changes, adding or deleting weekly sheets, or other data changes. The local HTTP server accepts a same-origin, revision-checked XLSX upload and replaces **only** the current workbook in `TRACKER_FOLDER`. A `.tracker-viewer-original.bak` recovery copy is created before the first overwrite (not overwritten subsequently).
+
+**Open file** and **Connect folder** in Chrome/Edge request the File System Access API write permission and can save the selected file directly. A legacy file upload picker is read-only and cannot write to the source; the app explicitly warns about this rather than claiming Excel was saved. Browser storage still holds a recovery draft, not the primary copy. Files already open in Excel may be locked, in which case the write fails visibly and the recovery draft remains.
+
+**New sheet** adds a worksheet to the opened `.xlsx`; **Delete sheet** removes that worksheet from the same file after confirmation. These actions do not create independent `.xlsx` files. Export is still available to download a separate workbook copy.

@@ -1,5 +1,5 @@
 import { bullet, FIELDS, HEADERS, lines, newId, newProject, nextWeek, sheetLabel, type Field, type MiscItem, type NoteField, type Project, type Section, type AgendaItem } from './types';
-import { changed, selectSheet, state } from './state';
+import { changed, deleteSheet, selectSheet, state } from './state';
 const $ = <T extends HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 const html = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]!));
 const SECTIONS: Section[] = ['projects', 'regional', 'misc'];
@@ -56,6 +56,9 @@ function highlightNavigation(): void {
   $('#current-section').textContent = activeSection==='meeting' ? 'Meeting & agenda' : SECTION_NAME[activeSection as Section];
 }
 function renderSheetTabs(): void {
+  const deleteButton = $('#delete-sheet') as HTMLButtonElement;
+  deleteButton.disabled = state.sheets.length <= 1;
+  deleteButton.title = deleteButton.disabled ? 'At least one weekly sheet must remain' : 'Delete the selected weekly sheet';
   $('#sheet-tabs').innerHTML = state.sheets.map((sheet,i) => `<button class="sheet-tab ${i===state.activeSheet?'active':''}" data-sheet="${i}" type="button">${html(sheetLabel(sheet,i))}${i===state.activeSheet?' <span class="sheet-current">●</span>':''}</button>`).join('');
   $('#sheet-tabs').querySelectorAll<HTMLButtonElement>('[data-sheet]').forEach(button => button.onclick = () => {
     selectSheet(Number(button.dataset.sheet)); changed(); render();
@@ -228,6 +231,13 @@ export function setupUI():void {
   $('#meeting-add').onclick=()=>{state.tracker.meeting.push({label:'New field',value:''});changed();renderContent();};
   $('#agenda-add').onclick=()=>{state.tracker.agenda.push({id:newId(),number:String(state.tracker.agenda.length+1),topic:'',attendee:'',time:'',urgent:false});changed();renderContent();};
   $('#new-sheet').onclick=()=>{const next=nextWeek(state.tracker);state.sheets.push(next);selectSheet(state.sheets.length-1);changed();render();document.querySelector('#meeting')?.scrollIntoView({behavior:'smooth'});};
+  $('#delete-sheet').onclick=()=>{
+    if (state.sheets.length <= 1) return;
+    const name=sheetLabel(state.tracker,state.activeSheet);
+    if (!window.confirm(`Delete weekly sheet ${name}? This removes its data from the current workspace and auto-saved draft. This removes the worksheet from the original Excel workbook when auto-save completes.`)) return;
+    if (!deleteSheet(state.activeSheet)) return;
+    hideDetails();render();
+  };
   const sections=document.querySelectorAll<HTMLElement>('.content-section');
   const observer=new IntersectionObserver(entries=>{
     const visible=entries.filter(e=>e.isIntersecting).sort((a,b)=>a.boundingClientRect.top-b.boundingClientRect.top);

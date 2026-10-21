@@ -3,12 +3,15 @@ import { createReadStream, existsSync, appendFileSync, statSync } from 'node:fs'
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { handleTrackerRequest } from './runtime-tracker.mts';
 import { openShortcut, replaceExistingViewer } from './windows-control.mts';
+import { listenerConfig } from './server-config.mts';
+import { handleSaveRequest, SAVE_PATH } from './save-tracker.mts';
 
-const hostname = '127.0.0.1';
-const port = Number(process.env.PORT ?? 59413);
 const executableDir = dirname(process.execPath);
 const standalone = Bun.isStandaloneExecutable;
 const appRoot = standalone ? executableDir : resolve(import.meta.dir, '..');
+const settings = listenerConfig(standalone ? { exeDir: executableDir, appRoot } : { appRoot });
+const hostname = settings.ip;
+const port = settings.port;
 const distRoot = standalone ? resolve(import.meta.dir, 'dist') : resolve(appRoot, 'dist');
 const mime: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -72,7 +75,7 @@ function handleAppRequest(req: IncomingMessage, res: ServerResponse): boolean {
   }
   if (pathname !== '/__app/quit') return false;
   if (req.method !== 'POST') { res.writeHead(405, { Allow: 'POST' }).end(); return true; }
-  const sameOrigin = req.headers.origin === `http://${hostname}:${port}`;
+  const sameOrigin = req.headers.origin === new URL(settings.browserUrl).origin;
   const json = req.headers['content-type']?.split(';')[0] === 'application/json';
   if (!sameOrigin || !json) { res.writeHead(403).end('Forbidden'); return true; }
   res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
@@ -85,6 +88,10 @@ function handleAppRequest(req: IncomingMessage, res: ServerResponse): boolean {
 }
 
 const server = createServer((req, res) => {
+  if (new URL(req.url ?? '/', settings.browserUrl).pathname === SAVE_PATH) {
+    void handleSaveRequest(req, res, standalone ? { root: appRoot, exeDir: executableDir } : { root: appRoot }, new URL(settings.browserUrl).origin);
+    return;
+  }
   if (handleAppRequest(req, res)) return;
   if (handleTrackerRequest(req, res, standalone ? { root: appRoot, exeDir: executableDir } : { root: appRoot })) return;
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }).end(); return; }
@@ -108,7 +115,7 @@ server.on('error', error => { reportFailure(error); process.exitCode = 1; });
 try { replaceExistingViewer(port, process.execPath); }
 catch (error) { reportFailure(error); process.exit(1); }
 server.listen(port, hostname, () => {
-  const url = `http://${hostname}:${port}/`;
+  const url = settings.browserUrl;
   console.log(`Tracker Viewer: ${url}`);
   if (standalone && !embeddedAsset('index.html')) {
     reportFailure(new Error(`No embedded index.html found. Embedded asset names: ${embeddedFiles.map(file => file.name).join(', ')}`));
