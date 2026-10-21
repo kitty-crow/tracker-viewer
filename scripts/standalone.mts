@@ -28,7 +28,12 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invali
 
 // Compile.assets embeds the dist directory. Reading Bun.embeddedFiles is more
 // reliable on Windows than guessing a virtual filesystem root for Bun's EXE.
-const embeddedFiles = standalone ? Bun.embeddedFiles : [];
+// Bun may type embedded assets as Blob rather than File. Check the filename
+// property before treating an asset as a named, addressable website file.
+const embeddedFiles = standalone
+  ? Bun.embeddedFiles.filter((file): file is Blob & { readonly name: string } =>
+      'name' in file && typeof file.name === 'string')
+  : [];
 function embeddedAsset(name: string): Blob | null {
   const match = embeddedFiles.filter(blob => {
     const path = blob.name.replaceAll('\\', '/').replace(/^\/+/, '');
