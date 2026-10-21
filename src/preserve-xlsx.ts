@@ -109,8 +109,8 @@ function worksheetTargets(workbook: string, relationships: string): Map<string, 
     const raw = target.startsWith('/') ? target.slice(1) : `xl/${target}`;
     const parts: string[] = [];
     for (const part of raw.replaceAll('\\', '/').split('/')) {
-      if (part === '..') parts.pop();
-      else if (part !== '.' && part) parts.push(part);
+      if (part === '..') { parts.pop(); continue; }
+      if (part !== '.' && part) parts.push(part);
     }
     byId.set(id, parts.join('/'));
   }

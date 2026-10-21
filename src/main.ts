@@ -190,11 +190,9 @@ newSheetButton.onclick = async () => {
   state.busy = true;
   try {
     if (pendingSave) { clearTimeout(pendingSave); pendingSave = undefined; }
-    if (state.dirty) {
-      if (!state.autosave) throw new Error('Save or export pending changes before creating a new weekly file.');
-      await persist();
-      if (state.dirty) throw new Error('The previous workbook has unsaved changes. Resolve its save error first.');
-    }
+    if (state.dirty && !state.autosave) throw new Error('Save or export pending changes before creating a new weekly file.');
+    if (state.dirty) await persist();
+    if (state.dirty) throw new Error('The previous workbook has unsaved changes. Resolve its save error first.');
     if (saveRunning) await saveRunning;
     const date = new Date();
     const next = newDatedWeek(state.tracker, date);
@@ -294,6 +292,15 @@ $('#save-btn').onclick = async () => {
   finally { button.disabled = false; button.textContent = '↓ Export Excel'; }
 };
 
+async function prepareRecoveryTemplate(): Promise<void> {
+  try {
+    const source = await loadRuntimeLatest();
+    if (!source || source.signature !== state.sourceSignature) return;
+    templateFile = source.file;
+    baselineSheets = structuredClone(await importWorkbook(source.file));
+  } catch { /* The original remains required before saving a recovered draft. */ }
+}
+
 (async () => {
   // The on-disk workbook is authoritative. IndexedDB is a recovery cache,
   // so only prefer it when there are genuinely unsaved changes to recover.
@@ -308,13 +315,7 @@ $('#save-btn').onclick = async () => {
     revision = 1;
     savedRevision = 0;
     restoredDraft = true;
-    try {
-      const source = await loadRuntimeLatest();
-      if (source && source.signature === state.sourceSignature) {
-        templateFile = source.file;
-        baselineSheets = structuredClone(await importWorkbook(source.file));
-      }
-    } catch { /* The original remains required before saving a recovered draft. */ }
+    await prepareRecoveryTemplate();
     render();
     showSaveStatus();
     // Never attempt a destructive export when the original template is absent.
