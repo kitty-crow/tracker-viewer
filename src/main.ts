@@ -256,6 +256,8 @@ $('#save-btn').onclick = async () => {
     restoredDraft = true;
     render();
     showSaveStatus();
+    // A recovered unsaved draft still needs to reach the actual workbook.
+    void (state.autosave ? persist() : Promise.resolve());
     await checkRuntime();
     return;
   }
