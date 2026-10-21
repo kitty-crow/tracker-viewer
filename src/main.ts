@@ -3,6 +3,7 @@ import { canWriteFile, chooseWritableFile, connectFolder, loadConnectedFolder, l
 import { canDiscard, setTrackers, state } from './state';
 import { autosavePreference, restoreDraft, saveDraft, setAutosavePreference } from './storage';
 import { exportWorkbook, importWorkbook } from './workbook';
+import { preserveWorkbook } from './preserve-xlsx';
 import { creationDate, newDatedWeek } from './types';
 import { notify, render, setupUI } from './ui';
 
@@ -12,6 +13,8 @@ let saveRunning: Promise<void> | null = null;
 let revision = 0;
 let savedRevision = 0;
 let fileHandle: FileSystemFileHandle | null = null;
+let templateFile: File | null = null;
+let baselineSheets: typeof state.sheets = [];
 let restoredDraft = false;
 let loadedFromRuntime = false;
 let checkingRuntime = false;
@@ -70,8 +73,11 @@ async function flushExcel(): Promise<void> {
       }
       showSaveStatus();
       const sheets = structuredClone(state.sheets);
-      const blob = await exportWorkbook(sheets);
+      if (!templateFile) throw new Error('The original Excel template is unavailable; no file was overwritten.');
+      const blob = await preserveWorkbook(templateFile, baselineSheets, sheets);
       await writeBack(blob);
+      templateFile = new File([blob], state.tracker.sourceName, { type: blob.type, lastModified: Date.now() });
+      baselineSheets = structuredClone(sheets);
       savedRevision = writingRevision;
       state.dirty = savedRevision !== revision;
       saveError = '';
@@ -115,6 +121,8 @@ async function openSelection(selection: FolderSelection | null, checkDiscard = t
     await storeWritableHandle(fileHandle).catch(() => undefined);
     const fileRevision = fileHandle ? { modified: selection.file.lastModified, size: selection.file.size } : null;
     setTrackers(sheets, selection.label, sheets.length - 1, selection.signature ?? null, fileRevision);
+    templateFile = selection.file;
+    baselineSheets = structuredClone(sheets);
     revision = 0;
     savedRevision = 0;
     saveError = '';
@@ -190,7 +198,8 @@ newSheetButton.onclick = async () => {
     if (saveRunning) await saveRunning;
     const date = new Date();
     const next = newDatedWeek(state.tracker, date);
-    const blob = await exportWorkbook([next]);
+    if (!templateFile) throw new Error('Original workbook unavailable; cannot create a layout-preserving copy.');
+    const blob = await preserveWorkbook(templateFile, baselineSheets, [next]);
     const reply = await fetch('./__tracker/create', {
       method: 'POST',
       headers: {
@@ -269,7 +278,8 @@ $('#save-btn').onclick = async () => {
   button.disabled = true;
   button.textContent = 'Exporting…';
   try {
-    const blob = await exportWorkbook(state.sheets);
+    const blob = templateFile ? await preserveWorkbook(templateFile, baselineSheets, state.sheets)
+      : await exportWorkbook(state.sheets);
     const date = new Date().toISOString().slice(0, 10);
     const base = (state.tracker.sourceName || 'Projects Tracker').replace(/\.xlsx$/i, '').replace(/[\\/:*?"<>|]/g, '_');
     const url = URL.createObjectURL(blob);
@@ -298,10 +308,17 @@ $('#save-btn').onclick = async () => {
     revision = 1;
     savedRevision = 0;
     restoredDraft = true;
+    try {
+      const source = await loadRuntimeLatest();
+      if (source && source.signature === state.sourceSignature) {
+        templateFile = source.file;
+        baselineSheets = structuredClone(await importWorkbook(source.file));
+      }
+    } catch { /* The original remains required before saving a recovered draft. */ }
     render();
     showSaveStatus();
-    // A recovered unsaved draft still needs to reach the actual workbook.
-    void (state.autosave ? persist() : Promise.resolve());
+    // Never attempt a destructive export when the original template is absent.
+    void (state.autosave && templateFile ? persist() : Promise.resolve());
     await checkRuntime();
     return;
   }
@@ -317,6 +334,8 @@ $('#save-btn').onclick = async () => {
   if (draft?.sheets?.length) {
     setTrackers(draft.sheets, draft.loadingFrom || 'recovered browser cache', draft.activeSheet,
       null, null);
+    templateFile = null;
+    baselineSheets = [];
     state.dirty = Boolean(draft.dirty);
     revision = state.dirty ? 1 : 0;
     savedRevision = 0;
