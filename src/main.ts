@@ -368,7 +368,7 @@ async function checkRuntime(): Promise<void> {
       return;
     }
     const empty = !state.tracker.sourceName && !state.tracker.projects.length && !state.tracker.misc.length;
-    if (!restoredDraft && (followLatest && loadedFromRuntime || empty)) {
+    if (!state.diffMode && !restoredDraft && (followLatest && loadedFromRuntime || empty)) {
       followLatest = await openSelection(await loadRuntimeFile(latest), false);
       return;
     }
