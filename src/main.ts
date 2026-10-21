@@ -1,11 +1,11 @@
 import './styles.css';
-import { canWriteFile, chooseWritableFile, connectFolder, loadConnectedFolder, loadRuntimeLatest, recoverWritableHandle, runtimeManifest, storeWritableHandle, type FolderSelection } from './folder';
+import { canWriteFile, chooseWritableFile, connectFolder, loadConnectedFolder, loadRuntimeLatest, loadRuntimeFile, runtimeFiles, recoverWritableHandle, storeWritableHandle, type FolderSelection } from './folder';
 import { canDiscard, setTrackers, state } from './state';
 import { autosavePreference, restoreDraft, saveDraft, setAutosavePreference } from './storage';
 import { exportWorkbook, importWorkbook } from './workbook';
 import { preserveWorkbook } from './preserve-xlsx';
 import { creationDate, newDatedWeek } from './types';
-import { notify, render, setupUI } from './ui';
+import { notify, render, renderSheetTabs, setupUI } from './ui';
 
 const $ = <T extends HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 let pendingSave: number | undefined;
@@ -17,6 +17,7 @@ let templateFile: File | null = null;
 let baselineSheets: typeof state.sheets = [];
 let restoredDraft = false;
 let loadedFromRuntime = false;
+let followLatest = true;
 let checkingRuntime = false;
 let saveError = '';
 const runtimeButton = $('#runtime-update') as HTMLButtonElement;
@@ -131,6 +132,7 @@ async function openSelection(selection: FolderSelection | null, checkDiscard = t
     runtimeButton.hidden = true;
     render();
     await saveDraft();
+    await refreshFolderPills();
     showSaveStatus();
     notify(`${state.tracker.projects.length} projects and ${state.tracker.misc.length} miscellaneous items loaded.`);
     return true;
@@ -141,13 +143,45 @@ async function openSelection(selection: FolderSelection | null, checkDiscard = t
   } finally { state.busy = false; }
 }
 
+async function refreshFolderPills(): Promise<void> {
+  try {
+    state.folderFiles = await runtimeFiles();
+    renderSheetTabs();
+  } catch (error) { console.warn('Workbook list unavailable:', error); }
+}
+
+/** Save the active workbook before switching files; never save into the next one. */
+async function openFolderPill(filename: string): Promise<void> {
+  if (!filename || state.busy || state.tracker.sourceName === filename && Boolean(state.sourceSignature)) return;
+  try {
+    if (pendingSave) { clearTimeout(pendingSave); pendingSave = undefined; }
+    if (saveRunning) await saveRunning;
+    if (state.dirty && !state.autosave) {
+      notify('Save or export your pending Excel changes before switching files.', true);
+      return;
+    }
+    if (state.dirty) await persist();
+    if (state.dirty) {
+      notify('The current Excel file still has unsaved changes; the file was not switched.', true);
+      return;
+    }
+    const file = state.folderFiles.find(item => item.filename === filename);
+    if (!file) throw new Error('That workbook is no longer in the folder. Refresh the file list.');
+    const loaded = await loadRuntimeFile(file);
+    const opened = await openSelection(loaded, false);
+    if (!opened) return;
+    followLatest = false;
+    runtimeButton.hidden = true;
+  } catch (error) { handleError(error); await refreshFolderPills(); }
+}
+
 function handleError(error: unknown): void {
   if (error instanceof DOMException && error.name === 'AbortError') return;
   notify(error instanceof Error ? error.message : String(error), true);
 }
 
 state.autosave = autosavePreference();
-setupUI();
+setupUI(filename => { void openFolderPill(filename); });
 showSaveStatus();
 const toggle = $('#autosave-toggle') as HTMLInputElement;
 toggle.checked = state.autosave;
@@ -215,6 +249,7 @@ newSheetButton.onclick = async () => {
     });
     const opened = await openSelection({ file: workbook, label: 'live folder: current weekly file', signature: created.signature }, false);
     if (!opened) throw new Error(`Created ${created.filename}, but could not display it. Use Latest to open it.`);
+    followLatest = true;
     notify(`Created ${created.filename} in TRACKER_FOLDER.`);
     document.querySelector('#meeting')?.scrollIntoView({ behavior: 'smooth' });
   } catch (error) { handleError(error); }
@@ -245,21 +280,34 @@ async function newestAvailable(): Promise<FolderSelection | null> {
   return await loadConnectedFolder(true);
 }
 $('#refresh-btn').onclick = async () => {
-  try { await openSelection(await newestAvailable()); } catch (error) { handleError(error); }
+  try {
+    const opened = await openSelection(await newestAvailable());
+    if (opened) followLatest = true;
+  } catch (error) { handleError(error); }
 };
 runtimeButton.onclick = async () => {
-  try { await openSelection(await loadRuntimeLatest()); } catch (error) { handleError(error); }
+  try {
+    const opened = await openSelection(await loadRuntimeLatest());
+    if (opened) followLatest = true;
+  } catch (error) { handleError(error); }
 };
 
 async function checkRuntime(): Promise<void> {
   if (checkingRuntime || state.busy || saveRunning || state.dirty) return;
   checkingRuntime = true;
   try {
-    const latest = await runtimeManifest();
-    if (!latest || latest.signature === state.sourceSignature) { runtimeButton.hidden = true; return; }
+    const files = await runtimeFiles();
+    state.folderFiles = files;
+    renderSheetTabs();
+    const latest = files[0];
+    if (!latest || latest.signature === state.sourceSignature) {
+      runtimeButton.hidden = true;
+      return;
+    }
     const empty = !state.tracker.sourceName && !state.tracker.projects.length && !state.tracker.misc.length;
-    if (!restoredDraft && (loadedFromRuntime || empty)) {
-      await openSelection(await loadRuntimeLatest(latest), false);
+    if (!restoredDraft && (followLatest && loadedFromRuntime || empty)) {
+      const opened = await openSelection(await loadRuntimeFile(latest), false);
+      if (opened) followLatest = true;
       return;
     }
     runtimeButton.textContent = `↻ Newest: ${latest.filename}`;
@@ -268,6 +316,7 @@ async function checkRuntime(): Promise<void> {
   } catch (error) { console.warn('Live tracker lookup failed:', error); }
   finally { checkingRuntime = false; }
 }
+
 window.setInterval(() => { void checkRuntime(); }, 30000);
 
 $('#save-btn').onclick = async () => {
@@ -294,8 +343,10 @@ $('#save-btn').onclick = async () => {
 
 async function prepareRecoveryTemplate(): Promise<void> {
   try {
-    const source = await loadRuntimeLatest();
-    if (!source || source.signature !== state.sourceSignature) return;
+    const files = await runtimeFiles();
+    const file = files.find(item => item.signature === state.sourceSignature);
+    if (!file) return;
+    const source = await loadRuntimeFile(file);
     templateFile = source.file;
     baselineSheets = structuredClone(await importWorkbook(source.file));
   } catch { /* The original remains required before saving a recovered draft. */ }
@@ -324,7 +375,10 @@ async function prepareRecoveryTemplate(): Promise<void> {
     return;
   }
   try {
-    const runtime = await loadRuntimeLatest();
+    const files = await runtimeFiles();
+    state.folderFiles = files;
+    renderSheetTabs();
+    const runtime = files[0] ? await loadRuntimeFile(files[0]) : await loadRuntimeLatest();
     if (runtime && await openSelection(runtime, false)) return;
   } catch (error) { console.warn('Live tracker lookup unavailable:', error); }
   try {
