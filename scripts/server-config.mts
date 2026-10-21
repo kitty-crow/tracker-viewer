@@ -30,7 +30,7 @@ function readSettings(file: string): Record<string, string> {
 
 /** .env beside the EXE wins, then the project root, then the working directory. */
 export function listenerConfig(options: ListenerOptions = {}): ListenerConfig {
-  const roots = [options.exeDir, options.appRoot, options.cwd ?? process.cwd()]
+  const roots = [options.exeDir, options.exeDir ? resolve(options.exeDir, '..') : undefined, options.appRoot, options.cwd ?? process.cwd()]
     .filter((value): value is string => Boolean(value)).map(value => resolve(value));
   const filename = [...new Set(roots)].map(root => join(root, '.env')).find(existsSync);
   const file = filename ? readSettings(filename) : {};
