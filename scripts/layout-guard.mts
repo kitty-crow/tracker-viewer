@@ -5,8 +5,7 @@ import { DOMParser } from '@xmldom/xmldom';
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
 
 function fingerprint(xml: string): string {
-  const doc = new DOMParser({ errorHandler: { fatalError: message => { throw new Error(message); } } })
-    .parseFromString(xml, 'application/xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
   if (!doc) throw new Error('Invalid worksheet XML');
   const named = (name: string, attrs: string[]): string[][] => {
     const nodes = doc.getElementsByTagNameNS(NS, name);

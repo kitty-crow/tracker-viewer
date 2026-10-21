@@ -90,8 +90,7 @@ export function workbookPatches(previous: Tracker[], current: Tracker[]): Patch[
 }
 
 function xmlDocument(xml: string): ReturnType<DOMParser['parseFromString']> {
-  const document = new DOMParser({ errorHandler: { fatalError: message => { throw new Error(message); } } })
-    .parseFromString(xml, 'application/xml');
+  const document = new DOMParser().parseFromString(xml, 'application/xml');
   if (!document) throw new Error('Excel XML could not be read');
   return document;
 }
