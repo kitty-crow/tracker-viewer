@@ -7,48 +7,54 @@ function psLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-/** The release binary may be copied under a different name for testing. */
-export function viewerProcessNames(executable: string): string[] {
-  return [...new Set(['trackerviewer.exe', basename(executable).toLowerCase()])];
-}
-
 /**
- * Identify the PID listening on our local port, then verify its executable name
- * before terminating it. A different service must never be killed by accident.
+ * The configured port belongs to Tracker Viewer, regardless of what the old
+ * executable was called. Resolve actual TCP listeners rather than image names.
+ * Never terminate our own PID or a core Windows service process.
  */
-export function replaceExistingViewer(port: number, executable: string): void {
-  if (process.platform !== 'win32' || !Bun.isStandaloneExecutable) return;
-  const allowed = viewerProcessNames(executable);
-  const script = `
+export function portTakeoverScript(port: number, ownPid: number): string {
+  return `
 $ErrorActionPreference = 'Stop'
 $port = ${port}
-$allowedNames = @(${allowed.map(psLiteral).join(', ')})
-$ourPid = ${process.pid}
+$ourPid = ${ownPid}
+$protected = @('idle', 'system', 'registry', 'smss', 'csrss', 'wininit', 'winlogon', 'services', 'lsass', 'svchost')
 $connections = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
 $owners = @($connections | Select-Object -ExpandProperty OwningProcess -Unique)
 foreach ($ownerPid in $owners) {
   if ($ownerPid -eq $ourPid) { continue }
-  $processInfo = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $ownerPid" -ErrorAction Stop
-  if ($null -eq $processInfo) { continue }
-  if ($processInfo.Name -notin $allowedNames) {
-    [Console]::Error.WriteLine("Port $port belongs to $($processInfo.Name), not a recognised Tracker Viewer executable ($($allowedNames -join ', ')). Refusing to terminate it.")
+  if ($ownerPid -le 4) {
+    [Console]::Error.WriteLine("Port $port belongs to protected Windows PID $ownerPid.")
+    exit 3
+  }
+  $owner = Get-Process -Id $ownerPid -ErrorAction SilentlyContinue
+  if ($null -eq $owner) { continue }
+  if ($owner.ProcessName.ToLowerInvariant() -in $protected) {
+    [Console]::Error.WriteLine("Port $port belongs to protected Windows process $($owner.ProcessName) (PID $ownerPid).")
     exit 3
   }
   Stop-Process -Id $ownerPid -Force -ErrorAction Stop
+  [Console]::Out.WriteLine("Stopped $($owner.ProcessName) (PID $ownerPid) listening on port $port.")
 }
-for ($attempt = 0; $attempt -lt 20; $attempt++) {
-  $remaining = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
+for ($attempt = 0; $attempt -lt 30; $attempt++) {
+  $remaining = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
+    Where-Object { $_.OwningProcess -ne $ourPid })
   if ($remaining.Count -eq 0) { exit 0 }
   Start-Sleep -Milliseconds 200
 }
-[Console]::Error.WriteLine("Port $port was not released after stopping the old TrackerViewer instance.")
+[Console]::Error.WriteLine("Port $port remains occupied after stopping its previous listener.")
 exit 4
 `;
+}
+
+/** Reclaim the configured port, not arbitrary processes by filename. */
+export function replaceExistingViewer(port: number, _executable: string): void {
+  if (process.platform !== 'win32' || !Bun.isStandaloneExecutable) return;
   const run = spawnSync('powershell.exe', [
-    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script,
-  ], { windowsHide: true, encoding: 'utf8', timeout: 15000 });
+    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command',
+    portTakeoverScript(port, process.pid),
+  ], { windowsHide: true, encoding: 'utf8', timeout: 20000 });
   if (run.error) throw run.error;
-  if (run.status !== 0) throw new Error(run.stderr?.trim() || `Port replacement failed (exit code ${run.status ?? 'unknown'}).`);
+  if (run.status !== 0) throw new Error(run.stderr?.trim() || `Unable to release port ${port} (exit ${run.status ?? 'unknown'}).`);
 }
 
 /**
