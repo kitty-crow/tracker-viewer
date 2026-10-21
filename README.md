@@ -38,6 +38,26 @@ To run the app without packaging, build the frontend first and use `bun run star
 
  temporary files), ordered by filename/date. Each date pill switches to that file; multiple worksheets inside a file have a separate worksheet row. Auto-save always targets the selected source workbook, not whichever workbook was most recently modified. Switching away from unsaved changes waits for auto-save to finish, or is blocked with a warning. The bar refreshes with the folder scan every 30 seconds and after creating a dated file. Choosing an older file pauses automatic switching to new weeks; click **Latest** to resume. 
 
+## Building the Windows EXE from WSL2 / Linux
+
+You can build the windowless Windows executable **without building on Windows**.
+The packaging step uses Bun's `bun-windows-x64` cross-compilation target; `release/TrackerViewer.exe` can then be copied to Windows. Work under a Linux directory such as `~/tracker-viewer`, not `/mnt/c`, to avoid filesystem locking and Windows package-install issues.
+
+In Ubuntu/WSL (run these inside the Linux terminal, with an appropriate project checkout):
+
+```sh
+sudo apt-get update && sudo apt-get install -y curl unzip
+curl -fsSL https://bun.com/install | bash
+export PATH="$HOME/.bun/bin:$PATH"
+bun install
+bun --bun run build
+file release/TrackerViewer.exe
+```
+
+The `--bun` flag makes locally installed commands such as TypeScript/Vite use Bun even when their shebang specifies Node.js. When cross-compiling, only the Windows `hideConsole` executable flag is used; metadata such as title/version requires compiling on Windows. Copy the built EXE to your existing Windows `release` directory with the `.env` and `public` directory still in the application root. The EXE does not need a WSL runtime on the Windows host.
+
+Corporate endpoint security can still inspect or block a copied Windows EXE, even if it was compiled in WSL. Follow your company's software policy; WSL is an alternate build environment, not an antivirus exemption.
+
 ## Live folder discovery: no rebuild needed
 
 The server scans for the newest `.xlsx` **every time the page requests the current manifest**. By default it uses `public/` beside the EXE, or `public/` in the source project when running from that directory. Put Excel trackers there at any time. The browser checks for a changed tracker every 30 seconds and offers to open it if you have an edited draft, or automatically opens it if there are no unsaved edits to protect.
