@@ -12,6 +12,11 @@
       <div class="brand"><span class="brand-icon">T</span><div><strong>Tracker Viewer</strong><small>PROJECT WORKSPACE</small></div></div>
       <div class="side-label">JUMP TO SECTION</div>
       <nav class="section-nav" id="section-nav" aria-label="Tracker sections"></nav>
+      <div class="side-label diff-tool-label">TOOLS</div>
+      <button type="button" id="diff-mode-toggle" class="nav-item diff-mode-button" role="switch" aria-checked="false" title="Compare two weekly tracker files without changing them">
+        <span class="nav-symbol">±</span><span>Diff mode</span><span class="diff-toggle-indicator" aria-hidden="true"></span>
+      </button>
+      <p class="sidebar-diff-hint" id="diff-sidebar-hint">Compare any two weeks</p>
     </aside>
     <main class="main-view">
       <header class="topbar">
@@ -31,6 +36,11 @@
           <input id="file-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden />
         </section>
         <div class="sheet-switcher"><div id="sheet-tabs" class="sheet-tabs" aria-label="Excel tracker files and worksheets"></div></div>
+        <section id="diff-panel" class="diff-panel workspace-card" aria-label="Changes between weekly workbooks" hidden>
+          <div class="section-heading"><div><span class="eyebrow">READ-ONLY COMPARISON</span><h2>Changes between weeks</h2><p class="diff-explainer">Select a baseline week, then a week to compare against it. No workbook will be modified.</p></div></div>
+          <div id="diff-choices" class="diff-choices" aria-live="polite"></div>
+          <div id="diff-results" class="diff-results" aria-live="polite"></div>
+        </section>
         <section id="meeting" class="content-section meeting-section" aria-label="Meeting details and agenda">
           <div class="section-heading"><div><span class="eyebrow">MEETING</span><h2>Meeting details & agenda</h2></div><div class="section-actions"><button class="button" id="meeting-add">+ Field</button><button class="button" id="agenda-add">+ Agenda item</button><button id="new-sheet" class="button button-primary">+ New sheet</button><button id="delete-sheet" type="button" class="button" title="Delete the selected weekly sheet" disabled>Delete sheet</button></div></div>
           <div class="meeting-layout"><div class="meeting-grid" id="meeting-fields"></div><div class="agenda-container"><div class="mini-heading">Agenda</div><div class="table-region" id="agenda-table"></div></div></div>

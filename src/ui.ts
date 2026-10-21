@@ -1,5 +1,6 @@
 import { bullet, FIELDS, HEADERS, lines, newId, newProject, sheetLabel, type Field, type MiscItem, type NoteField, type Project, type Section, type AgendaItem } from './types';
 import { changed, deleteSheet, selectSheet, state } from './state';
+import { compareTrackers, type DiffKind, type DiffLine, type DiffSection } from './diff';
 import { workbookLabel } from './folder';
 const $ = <T extends HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 const html = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]!));
@@ -11,6 +12,8 @@ let filterSequence = 0;
 let toastTimer: number | undefined;
 let activeSection = 'meeting';
 let onSelectWorkbook: ((filename: string) => void) | null = null;
+let onToggleDiff: ((enabled: boolean) => void) | null = null;
+let onSelectDiffSheet: ((side: 'from' | 'to', index: number) => void) | null = null;
 const sectionData = (section: Section): (Project | MiscItem)[] => section === 'misc' ? state.tracker.misc : state.tracker.projects.filter(p => p.section === section);
 function matchItem(item: Project | MiscItem): boolean {
   if (urgentOnly && !item.urgent && !(project(item) ? item.urgentLines.overview.length || item.urgentLines.updates.length : item.urgentLines.length)) return false;
@@ -60,23 +63,25 @@ function highlightNavigation(): void {
 /** Workbook pills correspond to files, worksheet pills to tabs within one file. */
 export function renderSheetTabs(): void {
   const deleteButton = $('#delete-sheet') as HTMLButtonElement;
-  deleteButton.disabled = state.sheets.length <= 1;
+  deleteButton.disabled = state.diffMode || state.sheets.length <= 1;
   deleteButton.title = deleteButton.disabled ? 'At least one worksheet must remain' : 'Delete the selected worksheet';
-  // Stable chronological order, regardless of which workbook was edited last.
   const files = [...state.folderFiles].sort((a, b) => a.filename.localeCompare(b.filename, undefined,
     { numeric: true, sensitivity: 'base' }));
   const fileButtons = files.map(file => {
-    const active = Boolean(state.sourceSignature) && file.filename === state.tracker.sourceName;
-    return `<button type="button" class="sheet-tab ${active ? 'active' : ''}"
+    const position = state.diffSelected.indexOf(file.filename);
+    const selecting = state.diffMode && position >= 0;
+    const active = !state.diffMode && Boolean(state.sourceSignature) && file.filename === state.tracker.sourceName;
+    const role = selecting ? (position === 0 ? 'From' : 'To') : '';
+    return `<button type="button" class="sheet-tab ${active ? 'active' : ''} ${selecting ? (position === 0 ? 'diff-from-selected' : 'diff-to-selected') : ''}"
       data-folder-file="${html(file.filename)}" title="${html(file.filename)}"
-      aria-current="${active ? 'page' : 'false'}">${html(workbookLabel(file.filename))}${active ? ' <span class="sheet-current">●</span>' : ''}</button>`;
+      aria-pressed="${selecting ? 'true' : 'false'}" aria-current="${active ? 'page' : 'false'}">${html(workbookLabel(file.filename))}${active ? ' <span class="sheet-current">●</span>' : ''}${role ? ` <span class="diff-pill-role">${role}</span>` : ''}</button>`;
   }).join('');
   const worksheets = state.sheets.map((sheet, i) =>
     `<button type="button" class="sheet-tab ${i === state.activeSheet ? 'active' : ''}"
       data-sheet="${i}">${html(sheetLabel(sheet, i))}${i === state.activeSheet ? ' <span class="sheet-current">●</span>' : ''}</button>`).join('');
   $('#sheet-tabs').innerHTML = (files.length
-    ? `<div class="workbook-tabs" role="group" aria-label="Excel files in tracker folder">${fileButtons}</div>`
-    : '') + (state.sheets.length > 1 || !files.length
+    ? `<div class="workbook-tabs" role="group" aria-label="${state.diffMode ? 'Choose two weeks to compare' : 'Excel files in tracker folder'}">${fileButtons}</div>`
+    : '') + (!state.diffMode && (state.sheets.length > 1 || !files.length)
     ? `<div class="worksheet-tabs" role="group" aria-label="Worksheets in selected Excel file">${worksheets}</div>`
     : '');
   $('#sheet-tabs').querySelectorAll<HTMLButtonElement>('[data-folder-file]').forEach(button => {
@@ -85,6 +90,68 @@ export function renderSheetTabs(): void {
   $('#sheet-tabs').querySelectorAll<HTMLButtonElement>('[data-sheet]').forEach(button => {
     button.onclick = () => { selectSheet(Number(button.dataset.sheet)); render(); };
   });
+}
+
+const diffSections: DiffSection[] = ['Projects & enquiries', 'Middle East region', 'Miscellaneous', 'Agenda', 'Meeting details'];
+const diffSectionIds: Record<DiffSection, string> = {
+  'Projects & enquiries': 'projects', 'Middle East region': 'regional',
+  'Miscellaneous': 'misc', 'Agenda': 'agenda', 'Meeting details': 'meeting',
+};
+const diffKindNames: Record<DiffKind, string> = {
+  added: 'Added', removed: 'Removed', changed: 'Changed',
+};
+function diffLineMarkup(line: DiffLine): string {
+  return `<div class="diff-line ${line.sign === '+' ? 'diff-plus' : 'diff-minus'}"><span class="diff-prefix">${line.sign}</span><span class="diff-field">${html(line.field)}</span><span class="diff-value">${html(line.value)}</span></div>`;
+}
+function sheetChoice(side: 'from' | 'to', filename: string, sheets: typeof state.sheets, selected: number): string {
+  const choices = sheets.map((sheet, i) =>
+    `<option value="${i}" ${i === selected ? 'selected' : ''}>${html(sheetLabel(sheet, i))}</option>`).join('');
+  return `<div class="diff-choice"><span class="diff-choice-label">${side === 'from' ? 'FROM · BASELINE' : 'TO · COMPARE'}</span>
+    <strong title="${html(filename)}">${html(filename)}</strong>
+    ${sheets.length > 1 ? `<label>Worksheet <select class="diff-sheet-select" data-diff-side="${side}" aria-label="${side === 'from' ? 'Baseline' : 'Comparison'} worksheet">${choices}</select></label>` : ''}</div>`;
+}
+export function renderDiff(): void {
+  const root = $('#app');
+  root.classList.toggle('diff-active', state.diffMode);
+  const toggle = $('#diff-mode-toggle');
+  toggle.classList.toggle('active', state.diffMode);
+  toggle.setAttribute('aria-checked', String(state.diffMode));
+  $('#diff-sidebar-hint').textContent = state.diffMode ? 'Choose From, then To' : 'Compare any two weeks';
+  $('#diff-panel').hidden = !state.diffMode;
+  if (!state.diffMode) return;
+  const selected = state.diffSelected;
+  const choices = $('#diff-choices'), results = $('#diff-results');
+  const old = state.diffWorkbooks.find(item => item.filename === selected[0]);
+  const next = state.diffWorkbooks.find(item => item.filename === selected[1]);
+  $('#page-title').textContent = 'Compare weekly trackers';
+  $('#page-subtitle').textContent = 'Choose any two weekly workbook pills to see the differences. This view is read-only.';
+  choices.innerHTML = old && next ? sheetChoice('from', old.filename, old.sheets, state.diffFromSheet)
+      + `<span class="diff-direction" aria-hidden="true">→</span>`
+      + sheetChoice('to', next.filename, next.sheets, state.diffToSheet)
+    : `<p class="diff-await-selection">${selected.length ? `From: ${html(selected[0])} — select the second week.` : 'Select your first week from the pills above.'}</p>`;
+  choices.querySelectorAll<HTMLSelectElement>('[data-diff-side]').forEach(control => {
+    control.onchange = () => onSelectDiffSheet?.(control.dataset.diffSide as 'from' | 'to', Number(control.value));
+  });
+  if (state.diffLoading) { results.innerHTML = '<p class="diff-await-selection">Reading both workbooks and comparing rows…</p>'; return; }
+  if (state.diffError) { results.innerHTML = `<p class="diff-failure">${html(state.diffError)}</p>`; return; }
+  if (!old || !next) { results.innerHTML = ''; return; }
+  const before = old.sheets[state.diffFromSheet];
+  const after = next.sheets[state.diffToSheet];
+  if (!before || !after) { results.innerHTML = '<p class="diff-failure">Selected worksheet is missing.</p>'; return; }
+  const report = compareTrackers(before, after);
+  const overview = `<div class="diff-summary" aria-label="Diff summary">
+    <span class="diff-summary-item diff-sum-added">+${report.added} added</span>
+    <span class="diff-summary-item diff-sum-removed">−${report.removed} removed</span>
+    <span class="diff-summary-item diff-sum-changed">~${report.changed} changed</span>
+  </div>`;
+  if (!report.entries.length) { results.innerHTML = overview + '<p class="diff-no-changes">No content changes found between these weeks.</p>'; return; }
+  results.innerHTML = overview + diffSections.map(section => {
+    const entries = report.entries.filter(entry => entry.section === section);
+    if (!entries.length) return '';
+    return `<section class="diff-group" id="diff-group-${diffSectionIds[section]}"><h3>${html(section)} <span>${entries.length} change${entries.length === 1 ? '' : 's'}</span></h3>
+      ${entries.map(entry => `<article class="diff-entry diff-entry-${entry.kind}"><div class="diff-entry-header"><span class="diff-entry-kind">${diffKindNames[entry.kind]}</span><strong>${html(entry.title)}</strong></div>
+      <div class="diff-entry-lines">${entry.lines.map(diffLineMarkup).join('') || '<div class="diff-line">Entry added or removed</div>'}</div></article>`).join('')}</section>`;
+  }).join('');
 }
 
 function renderStats(): void {
@@ -244,11 +311,24 @@ function showDetails(item:Project|MiscItem):void {
 function renderContent():void {
   $('#source-title').textContent=state.tracker.sourceName||'No workbook loaded';
   $('#source-path').textContent=state.tracker.sourceName?`Loaded from ${state.loadingFrom}`:'Open a tracker or connect a folder.';
-  renderSheetTabs();renderNavigation();renderMeeting();renderStats();renderActions();renderTables();
+  renderSheetTabs();renderNavigation();renderMeeting();renderStats();renderActions();renderTables();renderDiff();
 }
-export function render():void {renderContent();renderFilters();}
-export function setupUI(onFileSelect: (filename: string) => void):void {
+export function render():void {
+  renderContent();renderFilters();
+  if (!state.diffMode) {
+    $('#page-title').textContent = 'Projects & enquiries';
+    $('#page-subtitle').textContent = 'Edit cells directly, manage notes, and create a dated weekly workbook.';
+  }
+}
+export function setupUI(
+  onFileSelect: (filename: string) => void,
+  onModeChange: (enabled: boolean) => void,
+  onSheetChange: (side: 'from' | 'to', index: number) => void,
+):void {
   onSelectWorkbook = onFileSelect;
+  onToggleDiff = onModeChange;
+  onSelectDiffSheet = onSheetChange;
+  $('#diff-mode-toggle').onclick = () => onToggleDiff?.(!state.diffMode);
   $('#search-input').addEventListener('input',e=>{state.query=(e.target as HTMLInputElement).value;renderTables();});
   $('#urgent-only').addEventListener('change',e=>{urgentOnly=(e.target as HTMLInputElement).checked;renderTables();});
   $('#filter-add').addEventListener('click',()=>{state.filters.push({id:++filterSequence,field:'all',value:''});renderFilters();$('#filters').querySelector<HTMLInputElement>('input:last-of-type')?.focus();});

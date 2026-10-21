@@ -5,9 +5,12 @@ export interface State {
   tracker: Tracker; sheets: Tracker[]; activeSheet: number; folderFiles: RuntimeManifest[]; section: Section | 'meeting';
   filters: Filter[]; query: string; sort: { field: Field | 'description' | 'notes'; descending: boolean } | null;
   selectedId: string | null; dirty: boolean; busy: boolean; loadingFrom: string; autosave: boolean; sourceSignature: string | null; sourceRevision: { modified: number; size: number } | null;
+  diffMode: boolean; diffSelected: string[]; diffWorkbooks: { filename: string; sheets: Tracker[] }[];
+  diffFromSheet: number; diffToSheet: number; diffLoading: boolean; diffError: string;
 }
 const initial = blankTracker();
-export const state: State = { tracker: initial, sheets: [initial], activeSheet: 0, folderFiles: [], section: 'projects', filters: [], query: '', sort: null, selectedId: null, dirty: false, busy: false, loadingFrom: '', autosave: true, sourceSignature: null, sourceRevision: null };
+export const state: State = { tracker: initial, sheets: [initial], activeSheet: 0, folderFiles: [], section: 'projects', filters: [], query: '', sort: null, selectedId: null, dirty: false, busy: false, loadingFrom: '', autosave: true, sourceSignature: null, sourceRevision: null,
+  diffMode: false, diffSelected: [], diffWorkbooks: [], diffFromSheet: 0, diffToSheet: 0, diffLoading: false, diffError: '' };
 export function setTrackers(trackers: Tracker[], from: string, activeSheet = trackers.length - 1, signature: string | null = null, sourceRevision: { modified: number; size: number } | null = null): void {
   if (!trackers.length) trackers = [blankTracker()];
   state.sheets = trackers; state.activeSheet = Math.max(0, Math.min(activeSheet, trackers.length - 1));

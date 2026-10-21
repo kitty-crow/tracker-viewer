@@ -86,3 +86,52 @@ html{scroll-behaviour:smooth;scroll-padding-top:90px}
 .workbook-tabs,.worksheet-tabs{display:flex;flex-wrap:wrap;gap:7px;align-items:center;max-width:100%}
 .workbook-tabs .sheet-tab{white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .worksheet-tabs:not(:first-child){padding-top:7px;border-top:1px solid #e0e9f3;width:100%}
+
+/* Diff mode is an isolated read-only view. Workbook editing stays mounted but hidden. */
+.diff-tool-label{padding-top:31px}
+.diff-mode-button{border:1px solid #42607d;cursor:pointer}
+.diff-mode-button.active{border-color:#75bbff;background:#254f7d;color:white}
+.diff-toggle-indicator{margin-left:auto;width:29px;height:17px;border-radius:20px;background:#536b84;position:relative;flex-shrink:0}
+.diff-toggle-indicator:before{content:'';position:absolute;left:3px;top:3px;width:11px;height:11px;border-radius:50%;background:white;transition:transform .16s}
+.diff-mode-button.active .diff-toggle-indicator{background:#3286e6}
+.diff-mode-button.active .diff-toggle-indicator:before{transform:translateX(12px)}
+.sidebar-diff-hint{padding:0 12px;margin:9px 0 0;color:#88a3c1;font-size:11px}
+#app.diff-active .content-section,#app.diff-active .statistics,#app.diff-active .toolbar,#app.diff-active #filters{display:none!important}
+#app.diff-active #diff-panel{display:block!important}
+#diff-panel[hidden]{display:none!important}
+#app.diff-active .workbook-tabs .sheet-tab{border-radius:22px}
+.sheet-tab.diff-from-selected{background:#eaf2ff;border-color:#6b9ce0;color:#18519c}
+.sheet-tab.diff-to-selected{background:#e8f6f1;border-color:#62af98;color:#116d53}
+.diff-pill-role{font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding-left:5px}
+.diff-panel{margin-bottom:30px;overflow:hidden}
+.diff-explainer{font-size:12px;color:#71849a;margin:8px 0 0}
+.diff-choices{display:flex;align-items:stretch;flex-wrap:wrap;gap:12px;padding:19px 22px;background:#fbfdff;border-bottom:1px solid #e3eaf4}
+.diff-choice{border:1px solid #dce8f4;border-radius:10px;padding:12px 15px;flex:1;min-width:210px;display:flex;flex-direction:column;gap:7px;background:white}
+.diff-choice-label{font-size:10px;color:#6b83a0;font-weight:800;letter-spacing:.08em}
+.diff-choice strong{font-size:13px;color:#273f5a;overflow-wrap:anywhere}
+.diff-choice label{font-size:11px;color:#657e98;display:flex;gap:8px;align-items:center}
+.diff-sheet-select{border-radius:6px;padding:5px;border:1px solid #cdd9e7;max-width:100%;background:#fff}
+.diff-direction{font-size:23px;align-self:center;color:#6d8aaa}
+.diff-results{padding:20px 22px}
+.diff-await-selection,.diff-no-changes{padding:18px;color:#5d7996;font-size:13px;margin:0}
+.diff-failure{padding:13px 15px;border-radius:8px;color:#a22c42;background:#fff0f3}
+.diff-summary{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 21px}
+.diff-summary-item{padding:8px 12px;border-radius:7px;font-size:12px;font-weight:800}
+.diff-sum-added{color:#176948;background:#e4f7ed}
+.diff-sum-removed{color:#a53a4b;background:#fff0f1}
+.diff-sum-changed{color:#74549e;background:#f0ebfc}
+.diff-group{margin-bottom:26px}
+.diff-group h3{display:flex;align-items:center;gap:10px;color:#283e59;font-size:15px;padding-bottom:9px;border-bottom:1px solid #e4eaf2}
+.diff-group h3 span{font-size:11px;font-weight:600;color:#8294aa}
+.diff-entry{margin:10px 0;border:1px solid #dfe7f0;border-radius:9px;overflow:hidden;background:white}
+.diff-entry-header{display:flex;align-items:center;gap:11px;padding:12px 14px;background:#f5f8fc;overflow-wrap:anywhere}
+.diff-entry-header strong{font-size:13px;color:#30445d}
+.diff-entry-kind{font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:850;color:#64819e}
+.diff-entry-added .diff-entry-kind{color:#157c52}.diff-entry-removed .diff-entry-kind{color:#b13d50}.diff-entry-changed .diff-entry-kind{color:#73559e}
+.diff-entry-lines{padding:5px 0}
+.diff-line{display:grid;grid-template-columns:22px minmax(85px,135px) minmax(0,1fr);align-items:start;gap:9px;padding:6px 13px;font-size:12px;line-height:1.5}
+.diff-plus{background:#ecf8f0;color:#17653f}.diff-minus{background:#fff0f1;color:#a23947}
+.diff-prefix{font-weight:900;font-size:14px}
+.diff-field{font-weight:750;opacity:.78;overflow-wrap:anywhere}
+.diff-value{white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:760px){.diff-results{padding:12px}.diff-choices{padding:12px}.diff-line{grid-template-columns:18px minmax(65px,100px) minmax(0,1fr);gap:5px;padding:7px}}
