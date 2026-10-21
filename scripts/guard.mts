@@ -1,36 +1,42 @@
 import ts from 'typescript';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { execFileSync } from 'node:child_process';
 
-async function files(root: string): Promise<string[]> {
-  const entries = await readdir(root, { withFileTypes: true });
+// Source files must be validated without assuming the checkout contains .git.
+// Skip dependencies and generated artefacts, not user-maintained source folders.
+const ignoredDirectories = new Set([
+  '.git', '.sea', '.vite', 'node_modules', 'dist', 'release', 'coverage',
+]);
+
+async function sourceFiles(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
   const groups = await Promise.all(entries.map(async entry => {
-    const filename = join(root, entry.name);
-    return entry.isDirectory() ? files(filename) : [filename];
+    const file = join(directory, entry.name);
+    if (!entry.isDirectory()) return [file];
+    return ignoredDirectories.has(entry.name) ? [] : sourceFiles(file);
   }));
   return groups.flat();
 }
 
 const errors: string[] = [];
-// Only tracked JavaScript source is a repository violation. A previous build may
-// leave obsolete, untracked .mjs/.cjs files in the user's working directory.
-const tracked = new Set(execFileSync('git', ['ls-files', '--cached', '-z', '--', 'src', 'scripts', 'test', 'vite.config.ts'], { encoding: 'utf8' }).split('\0').filter(Boolean));
-const sources = (await Promise.all(['src', 'scripts', 'test'].map(files))).flat();
-sources.push('vite.config.ts');
+const sources = await sourceFiles('.');
 for (const filename of sources) {
-  if (/\.[cm]?jsx?$/.test(filename) && tracked.has(filename.replaceAll('\\', '/'))) errors.push(`${filename}: JavaScript source is forbidden`);
-  if (!/\.[cm]?ts$/.test(filename) || filename.endsWith('.d.ts')) continue;
+  if (/\.(?:js|cjs|mjs|jsx)$/i.test(filename)) {
+    errors.push(`${filename}: JavaScript source is forbidden; use TypeScript`);
+    continue;
+  }
+  if (!/\.(?:ts|mts|cts|tsx)$/i.test(filename) || filename.endsWith('.d.ts')) continue;
+
   const source = ts.createSourceFile(filename, await readFile(filename, 'utf8'), ts.ScriptTarget.Latest, true);
   function visit(node: ts.Node, insideIf: boolean): void {
-    const location = source.getLineAndCharacterOfPosition(node.getStart(source));
-    const prefix = `${filename}:${location.line + 1}`;
+    const position = source.getLineAndCharacterOfPosition(node.getStart(source));
+    const prefix = `${filename}:${position.line + 1}`;
     if (node.kind === ts.SyntaxKind.AnyKeyword) errors.push(`${prefix}: explicit any`);
     if (ts.isIfStatement(node) && insideIf) errors.push(`${prefix}: nested if`);
-    const next = ts.isFunctionLike(node) ? false : insideIf || ts.isIfStatement(node);
-    ts.forEachChild(node, child => visit(child, next));
+    const nested = ts.isFunctionLike(node) ? false : insideIf || ts.isIfStatement(node);
+    ts.forEachChild(node, child => visit(child, nested));
   }
   visit(source, false);
 }
-if (errors.length > 0) throw new Error(errors.join('\n'));
+if (errors.length) throw new Error(errors.join('\n'));
 console.log('Strict source guard passed');
