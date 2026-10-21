@@ -77,3 +77,17 @@ test('save origin guard accepts only configured address and its loopback alias o
   expect(trustedOrigin(undefined, ORIGIN)).toBe(false);
   expect(trustedOrigin('http://localhost:59413', 'http://192.168.1.42:59413')).toBe(false);
 });
+
+test('LAN clients may save via a local interface address when the listener binds 0.0.0.0', () => {
+  const assigned = ['127.0.0.1', '192.168.50.149', '10.8.0.6'];
+  const viaLan = 'http://192.168.50.149:59413';
+  expect(trustedOrigin(viaLan, ORIGIN, '192.168.50.149:59413', assigned)).toBe(true);
+  expect(trustedOrigin('http://10.8.0.6:59413', ORIGIN, '10.8.0.6:59413', assigned)).toBe(true);
+  expect(trustedOrigin(viaLan, ORIGIN, '192.168.50.149:59414', assigned)).toBe(false);
+  expect(trustedOrigin(viaLan, ORIGIN, '192.168.50.148:59413', assigned)).toBe(false);
+  expect(trustedOrigin('http://192.168.50.148:59413', ORIGIN, '192.168.50.148:59413', assigned)).toBe(false);
+  expect(trustedOrigin('http://malicious.example:59413', ORIGIN, 'malicious.example:59413', assigned)).toBe(false);
+  expect(trustedOrigin('http://192.168.50.149:59414', ORIGIN, '192.168.50.149:59414', assigned)).toBe(false);
+  expect(trustedOrigin('https://192.168.50.149:59413', ORIGIN, '192.168.50.149:59413', assigned)).toBe(false);
+  expect(trustedOrigin(undefined, ORIGIN, '192.168.50.149:59413', assigned)).toBe(false);
+});

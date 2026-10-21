@@ -2,6 +2,8 @@ import { createWriteStream } from 'node:fs';
 import { copyFile, rename, rm, stat, open } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { networkInterfaces } from 'node:os';
+import { isIP } from 'node:net';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -13,18 +15,41 @@ const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 let writing = false;
 
 /**
- * Both 127.0.0.1 and localhost address the loopback service, but browsers
- * send different Origin values for them. Trust only the configured origin and
- * its exact loopback alias at the same port. Never accept arbitrary websites.
+ * The browser's Origin must be the configured address or the machine's own
+ * LAN IPv4 address, with the same port and request Host. This allows
+ * IP=0.0.0.0 without accepting unrelated origins or DNS rebinding hosts.
  */
-export function trustedOrigin(origin: string | undefined, configuredOrigin: string): boolean {
+export function trustedOrigin(
+  origin: string | undefined,
+  configuredOrigin: string,
+  requestHost?: string,
+  interfaceAddresses?: readonly string[],
+): boolean {
   if (!origin) return false;
   if (origin === configuredOrigin) return true;
-  const address = new URL(configuredOrigin);
-  if (address.protocol !== 'http:' || !address.port) return false;
-  if (address.hostname !== '127.0.0.1' && address.hostname !== 'localhost') return false;
-  const alias = address.hostname === '127.0.0.1' ? 'localhost' : '127.0.0.1';
-  return origin === `http://${alias}:${address.port}`;
+
+  let configured: URL;
+  try { configured = new URL(configuredOrigin); }
+  catch { return false; }
+  if (configured.protocol !== 'http:' || !configured.port) return false;
+
+  // 127.0.0.1 and localhost are interchangeable when opening the app locally.
+  if (configured.hostname === '127.0.0.1' && origin === `http://localhost:${configured.port}`) return true;
+  if (configured.hostname === 'localhost' && origin === `http://127.0.0.1:${configured.port}`) return true;
+
+  if (!requestHost) return false;
+  let requested: URL;
+  try { requested = new URL(`http://${requestHost}`); }
+  catch { return false; }
+  if (requested.port !== configured.port || isIP(requested.hostname) !== 4) return false;
+  if (origin !== requested.origin) return false;
+  // Only the server's own IPv4 addresses are trusted: not arbitrary private
+  // addresses and not hostnames whose DNS might be rebound by another site.
+  const addresses = interfaceAddresses ?? Object.values(networkInterfaces())
+    .flatMap(devices => devices ?? [])
+    .filter(device => device.family === 'IPv4')
+    .map(device => device.address);
+  return addresses.includes(requested.hostname);
 }
 
 function response(res: ServerResponse, status: number, message: string): void {
@@ -46,7 +71,7 @@ export async function handleSaveRequest(
   req: IncomingMessage, res: ServerResponse, options: ScannerOptions, allowedOrigin: string,
 ): Promise<void> {
   if (req.method !== 'PUT') { response(res, 405, 'PUT required'); return; }
-  if (!trustedOrigin(req.headers.origin, allowedOrigin) || req.headers['content-type']?.split(';')[0] !== MIME) {
+  if (!trustedOrigin(req.headers.origin, allowedOrigin, req.headers.host) || req.headers['content-type']?.split(';')[0] !== MIME) {
     response(res, 403, 'Same-origin Excel write required'); return;
   }
   const encoded = req.headers['x-tracker-signature'];

@@ -75,7 +75,7 @@ function handleAppRequest(req: IncomingMessage, res: ServerResponse): boolean {
   }
   if (pathname !== '/__app/quit') return false;
   if (req.method !== 'POST') { res.writeHead(405, { Allow: 'POST' }).end(); return true; }
-  const sameOrigin = trustedOrigin(req.headers.origin, new URL(settings.browserUrl).origin);
+  const sameOrigin = trustedOrigin(req.headers.origin, new URL(settings.browserUrl).origin, req.headers.host);
   const json = req.headers['content-type']?.split(';')[0] === 'application/json';
   if (!sameOrigin || !json) { res.writeHead(403).end('Forbidden'); return true; }
   res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
