@@ -7,17 +7,22 @@ function psLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
+/** The release binary may be copied under a different name for testing. */
+export function viewerProcessNames(executable: string): string[] {
+  return [...new Set(['trackerviewer.exe', basename(executable).toLowerCase()])];
+}
+
 /**
  * Identify the PID listening on our local port, then verify its executable name
  * before terminating it. A different service must never be killed by accident.
  */
 export function replaceExistingViewer(port: number, executable: string): void {
   if (process.platform !== 'win32' || !Bun.isStandaloneExecutable) return;
-  const expected = basename(executable).toLowerCase();
+  const allowed = viewerProcessNames(executable);
   const script = `
 $ErrorActionPreference = 'Stop'
 $port = ${port}
-$expected = ${psLiteral(expected)}
+$allowedNames = @(${allowed.map(psLiteral).join(', ')})
 $ourPid = ${process.pid}
 $connections = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
 $owners = @($connections | Select-Object -ExpandProperty OwningProcess -Unique)
@@ -25,8 +30,8 @@ foreach ($ownerPid in $owners) {
   if ($ownerPid -eq $ourPid) { continue }
   $processInfo = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $ownerPid" -ErrorAction Stop
   if ($null -eq $processInfo) { continue }
-  if ($processInfo.Name -ine $expected) {
-    [Console]::Error.WriteLine("Port $port belongs to $($processInfo.Name), not TrackerViewer.exe. Refusing to terminate it.")
+  if ($processInfo.Name -notin $allowedNames) {
+    [Console]::Error.WriteLine("Port $port belongs to $($processInfo.Name), not a recognised Tracker Viewer executable ($($allowedNames -join ', ')). Refusing to terminate it.")
     exit 3
   }
   Stop-Process -Id $ownerPid -Force -ErrorAction Stop
