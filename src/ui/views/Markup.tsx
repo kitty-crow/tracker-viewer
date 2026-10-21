@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { FIELDS, HEADERS, lines, sheetLabel, type Field, type NoteField, type MiscItem, type Project, type Section, type AgendaItem } from '../../model/TrackerTypes';
+import { FIELDS, HEADERS, lines, sheetLabel, type Field, type NoteField, type MiscItem, type Project, type Section } from '../../model/TrackerTypes';
 import { state, type Filter } from '../../model/TrackerState';
 import { workbookLabel } from '../../files/WorkbookFolder';
 import type { DiffKind, DiffLine, DiffReport, DiffSection } from '../../comparison/TrackerDiff';
@@ -219,7 +219,7 @@ export function MeetingFieldsView(): ReactNode {
 
 /** Agenda rows expose data attributes for edit and urgency event delegation. */
 export function AgendaView(): ReactNode {
-  const fields: (keyof AgendaItem)[] = ['number', 'topic', 'attendee', 'time'];
+  const fields = ['number', 'topic', 'attendee', 'time'] as const;
   return <div className="agenda-list" role="list" aria-label="Agenda items">
     <div className="agenda-row agenda-row-head" aria-hidden="true">
       <span>No</span><span>Topic</span><span>Attendee</span><span>Time</span><span></span>
