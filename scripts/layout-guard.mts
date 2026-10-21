@@ -51,11 +51,11 @@ export async function verifyLayoutPreserved(originalPath: string, candidatePath:
     if (!originalEntry || !candidateEntry) throw new Error(`Missing Excel package part: ${name}`);
     const original = await originalEntry.async('nodebuffer');
     const candidate = await candidateEntry.async('nodebuffer');
-    if (/^xl\/worksheets\/[^/]+\.xml$/i.test(name)) {
-      if (fingerprint(original.toString('utf8')) !== fingerprint(candidate.toString('utf8'))) {
-        throw new Error(`Worksheet layout changed in ${name}; the original has not been overwritten.`);
-      }
-    } else if (!original.equals(candidate)) {
+    const worksheet = /^xl\/worksheets\/[^/]+\.xml$/i.test(name);
+    if (worksheet && fingerprint(original.toString('utf8')) !== fingerprint(candidate.toString('utf8'))) {
+      throw new Error(`Worksheet layout changed in ${name}; the original has not been overwritten.`);
+    }
+    if (!worksheet && !original.equals(candidate)) {
       throw new Error(`Excel package part ${name} changed; refusing to overwrite the original.`);
     }
   }
