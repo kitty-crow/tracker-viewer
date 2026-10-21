@@ -306,8 +306,7 @@ async function checkRuntime(): Promise<void> {
     }
     const empty = !state.tracker.sourceName && !state.tracker.projects.length && !state.tracker.misc.length;
     if (!restoredDraft && (followLatest && loadedFromRuntime || empty)) {
-      const opened = await openSelection(await loadRuntimeFile(latest), false);
-      if (opened) followLatest = true;
+      followLatest = await openSelection(await loadRuntimeFile(latest), false);
       return;
     }
     runtimeButton.textContent = `↻ Newest: ${latest.filename}`;
