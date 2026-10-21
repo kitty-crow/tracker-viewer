@@ -4,6 +4,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 export const MANIFEST_PATH = '/__tracker/manifest';
 export const LATEST_PATH = '/__tracker/latest.xlsx';
+export const FILES_PATH = '/__tracker/files';
+export const FILE_PATH = '/__tracker/file';
 const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 export interface ScannerOptions {
@@ -47,41 +49,71 @@ export function trackerDirectory(options: ScannerOptions = {}): string | null {
   return fallback ?? null;
 }
 
-export function latestTracker(options: ScannerOptions = {}): TrackerRecord | null {
+/** Every live workbook, newest modified first, without touching subfolders. */
+export function folderTrackers(options: ScannerOptions = {}): TrackerRecord[] {
   const folder = trackerDirectory(options);
-  if (!folder || !existsSync(folder) || !statSync(folder).isDirectory()) return null;
-  const files = readdirSync(folder, { withFileTypes: true })
-    .filter(file => file.isFile() && /\.xlsx$/i.test(file.name) && !file.name.startsWith('~$') && file.name.toLowerCase() !== 'latest-tracker.xlsx')
+  if (!folder || !existsSync(folder) || !statSync(folder).isDirectory()) return [];
+  return readdirSync(folder, { withFileTypes: true })
+    .filter(file => file.isFile() && /\.xlsx$/i.test(file.name)
+      && !file.name.startsWith('~$') && file.name.toLowerCase() !== 'latest-tracker.xlsx')
     .map(file => {
       const path = join(folder, file.name);
       const info = statSync(path);
-      return { path, filename: file.name, modified: info.mtimeMs, size: info.size };
+      const filename = file.name;
+      return { path, filename, modified: info.mtimeMs, size: info.size,
+        folder: basename(folder), signature: JSON.stringify([filename, info.mtimeMs, info.size]) };
     })
     .sort((a, b) => b.modified - a.modified || a.filename.localeCompare(b.filename));
-  const latest = files[0];
-  if (!latest) return null;
-  return { ...latest, folder: basename(folder), signature: JSON.stringify([latest.filename, latest.modified, latest.size]) };
+}
+
+export function latestTracker(options: ScannerOptions = {}): TrackerRecord | null {
+  return folderTrackers(options)[0] ?? null;
+}
+
+/** Revision check targets one named file, even when newer workbooks exist. */
+export function trackerWithSignature(signature: string, options: ScannerOptions = {}): TrackerRecord | null {
+  return folderTrackers(options).find(file => file.signature === signature) ?? null;
 }
 
 export function handleTrackerRequest(req: IncomingMessage, res: ServerResponse, options: ScannerOptions = {}): boolean {
-  let pathname: string;
-  try { pathname = new URL(req.url ?? '/', 'http://localhost').pathname; }
+  let url: URL;
+  try { url = new URL(req.url ?? '/', 'http://localhost'); }
   catch { return false; }
-  if (pathname !== MANIFEST_PATH && pathname !== LATEST_PATH) return false;
-  if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }).end(); return true; }
-  let tracker: TrackerRecord | null;
-  try { tracker = latestTracker(options); }
+  const pathname = url.pathname;
+  if (![MANIFEST_PATH, LATEST_PATH, FILES_PATH, FILE_PATH].includes(pathname)) return false;
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { Allow: 'GET, HEAD' }).end(); return true;
+  }
+  let files: TrackerRecord[];
+  try { files = folderTrackers(options); }
   catch { res.writeHead(500, { 'Cache-Control': 'no-store' }).end('Unable to scan tracker folder'); return true; }
-  if (!tracker) { res.writeHead(404, { 'Cache-Control': 'no-store' }).end('No tracker found'); return true; }
-  if (pathname === MANIFEST_PATH) {
-    const payload = JSON.stringify(tracker);
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(payload), 'Cache-Control': 'no-store' });
+  if (pathname === FILES_PATH) {
+    const payload = JSON.stringify(files.map(({ filename, modified, size, folder, signature }) =>
+      ({ filename, modified, size, folder, signature })));
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8',
+      'Content-Length': Buffer.byteLength(payload), 'Cache-Control': 'no-store' });
     res.end(req.method === 'HEAD' ? undefined : payload);
     return true;
   }
-  res.writeHead(200, { 'Content-Type': MIME, 'Content-Length': tracker.size, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+  const filename = url.searchParams.get('name');
+  const selected = pathname === FILE_PATH
+    ? files.find(item => item.filename === filename)
+    : files[0];
+  if (!selected) { res.writeHead(404, { 'Cache-Control': 'no-store' }).end('No tracker found'); return true; }
+  if (pathname === FILE_PATH && selected.signature !== url.searchParams.get('signature')) {
+    res.writeHead(409, { 'Cache-Control': 'no-store' }).end('Workbook changed; refresh folder list'); return true;
+  }
+  if (pathname === MANIFEST_PATH) {
+    const payload = JSON.stringify(selected);
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8',
+      'Content-Length': Buffer.byteLength(payload), 'Cache-Control': 'no-store' });
+    res.end(req.method === 'HEAD' ? undefined : payload);
+    return true;
+  }
+  res.writeHead(200, { 'Content-Type': MIME, 'Content-Length': selected.size,
+    'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   if (req.method === 'HEAD') { res.end(); return true; }
-  const stream = createReadStream(tracker.path);
+  const stream = createReadStream(selected.path);
   stream.on('error', () => res.destroy());
   stream.pipe(res);
   return true;

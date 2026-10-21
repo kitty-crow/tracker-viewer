@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { latestTracker, trackerDirectory, type ScannerOptions } from './runtime-tracker.mts';
+import { trackerWithSignature, trackerDirectory, type ScannerOptions } from './runtime-tracker.mts';
 import { trustedOrigin } from './save-tracker.mts';
 import { verifyLayoutPreserved } from './layout-guard.mts';
 
@@ -48,9 +48,9 @@ export async function handleCreateRequest(
     failure(res, 413, 'Workbook exceeds 100 MB'); return;
   }
   const folder = trackerDirectory(options);
-  const source = latestTracker(options);
+  const source = trackerWithSignature(expected, options);
   if (!folder || !source || source.signature !== expected) {
-    failure(res, 409, 'Current workbook changed or is no longer the latest; reload first'); return;
+    failure(res, 409, 'Selected workbook changed or moved; reload first'); return;
   }
   const temporary = join(folder, `.${randomUUID()}.tracker-create.tmp`);
   try {
@@ -68,7 +68,7 @@ export async function handleCreateRequest(
       if (header.toString('binary') !== 'PK\x03\x04') { failure(res, 400, 'Invalid XLSX archive'); return; }
     } finally { await reader.close(); }
     await verifyLayoutPreserved(source.path, temporary);
-    if (latestTracker(options)?.signature !== expected) {
+    if (trackerWithSignature(expected, options)?.signature !== expected) {
       failure(res, 409, 'Source workbook changed during creation'); return;
     }
     for (let i = 1; i <= 999; i++) {

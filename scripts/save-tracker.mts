@@ -7,7 +7,7 @@ import { isIP } from 'node:net';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { latestTracker, type ScannerOptions, type TrackerRecord } from './runtime-tracker.mts';
+import { trackerWithSignature, type ScannerOptions, type TrackerRecord } from './runtime-tracker.mts';
 import { verifyLayoutPreserved } from './layout-guard.mts';
 
 export const SAVE_PATH = '/__tracker/save';
@@ -59,7 +59,7 @@ function response(res: ServerResponse, status: number, message: string): void {
 }
 
 function unchanged(expected: string, options: ScannerOptions): TrackerRecord | null {
-  const current = latestTracker(options);
+  const current = trackerWithSignature(expected, options);
   return current?.signature === expected ? current : null;
 }
 
@@ -86,7 +86,7 @@ export async function handleSaveRequest(
   let temp = '';
   try {
     const selected = unchanged(expected, options);
-    if (!selected) { response(res, 409, 'Source workbook was changed, moved, or superseded; reload before overwriting'); return; }
+    if (!selected) { response(res, 409, 'Source workbook was changed or moved; reload before overwriting'); return; }
     temp = `${selected.path}.tracker-${randomUUID()}.tmp`;
     let received = 0;
     const limit = new Transform({ transform(chunk: Buffer, _encoding, callback) {
