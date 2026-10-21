@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { latestTracker, trackerDirectory, type ScannerOptions } from './runtime-tracker.mts';
 import { trustedOrigin } from './save-tracker.mts';
+import { verifyLayoutPreserved } from './layout-guard.mts';
 
 export const CREATE_PATH = '/__tracker/create';
 const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -66,6 +67,7 @@ export async function handleCreateRequest(
       await reader.read(header, 0, 4, 0);
       if (header.toString('binary') !== 'PK\x03\x04') { failure(res, 400, 'Invalid XLSX archive'); return; }
     } finally { await reader.close(); }
+    await verifyLayoutPreserved(source.path, temporary);
     if (latestTracker(options)?.signature !== expected) {
       failure(res, 409, 'Source workbook changed during creation'); return;
     }
@@ -87,7 +89,8 @@ export async function handleCreateRequest(
     failure(res, 409, 'Too many weekly files created for this date');
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    failure(res, code === 'EACCES' || code === 'EPERM' || code === 'EBUSY' ? 423 : 500,
+    const layoutError = error instanceof Error && /(?:layout changed|structure changed|package part)/i.test(error.message);
+    failure(res, layoutError ? 409 : code === 'EACCES' || code === 'EPERM' || code === 'EBUSY' ? 423 : 500,
       error instanceof Error ? error.message : String(error));
   } finally { await rm(temporary, { force: true }).catch(() => undefined); }
 }

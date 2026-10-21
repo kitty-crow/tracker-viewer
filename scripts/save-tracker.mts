@@ -8,6 +8,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { latestTracker, type ScannerOptions, type TrackerRecord } from './runtime-tracker.mts';
+import { verifyLayoutPreserved } from './layout-guard.mts';
 
 export const SAVE_PATH = '/__tracker/save';
 const MAX_BYTES = 100 * 1024 * 1024;
@@ -100,6 +101,9 @@ export async function handleSaveRequest(
       await check.read(header, 0, 4, 0);
       if (header.toString('binary') !== 'PK\x03\x04') { response(res, 400, 'Invalid XLSX archive'); return; }
     } finally { await check.close(); }
+    // Even an older client must not be allowed to replace the source with
+    // a regenerated workbook that loses merges, formatting or table layout.
+    await verifyLayoutPreserved(selected.path, temp);
     if (!unchanged(expected, options)) { response(res, 409, 'Source workbook changed during save'); return; }
     // Never overwrite this initial recovery copy on subsequent saves.
     try { await copyFile(selected.path, `${selected.path}.tracker-viewer-original.bak`, constants.COPYFILE_EXCL); }
@@ -113,7 +117,8 @@ export async function handleSaveRequest(
       .end(JSON.stringify({ filename: selected.filename, signature, modified: result.mtimeMs, size: result.size }));
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    response(res, code === 'EBUSY' || code === 'EPERM' || code === 'EACCES' ? 423 : 500,
+    const layoutError = error instanceof Error && /(?:layout changed|structure changed|package part)/i.test(error.message);
+    response(res, layoutError ? 409 : code === 'EBUSY' || code === 'EPERM' || code === 'EACCES' ? 423 : 500,
       error instanceof Error ? error.message : String(error));
   } finally {
     if (temp) await rm(temp, { force: true }).catch(() => undefined);
