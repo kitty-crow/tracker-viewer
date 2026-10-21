@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import JSZip from 'jszip';
 import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmSync, writeFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,8 +9,15 @@ import { latestTracker } from '../scripts/runtime-tracker.mts';
 
 const ORIGIN = 'http://127.0.0.1:59413';
 const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-// The writer validates the PK zip header; XLSX generation itself runs in the browser.
-const zipped = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(256, 42)]);
+// Use an actual XLSX-like ZIP structure: the writer must reject layout changes.
+async function workbook(value: string): Promise<Buffer> {
+  const zip = new JSZip();
+  zip.file('xl/workbook.xml', '<workbook><sheet name="Sheet2"/></workbook>');
+  zip.file('xl/styles.xml', '<styleSheet><fonts count="1"/></styleSheet>');
+  zip.file('xl/worksheets/sheet1.xml', `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="D4:D4"/><sheetData><row r="4" ht="42" customHeight="1"><c r="D4" s="2" t="inlineStr"><is><t>${value}</t></is></c></row></sheetData><mergeCells count="1"><mergeCell ref="D4:E4"/></mergeCells></worksheet>`);
+  return Buffer.from(await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }));
+}
+const zipped = await workbook('original');
 
 function fixture(): { root: string; workbook: string } {
   const root = mkdtempSync(join(tmpdir(), 'tracker-saving-'));
@@ -36,7 +44,7 @@ test('real XLSX is atomically updated and one original backup is created', async
   const server = await serve(root);
   try {
     const oldSignature = latestTracker({ root, cwd: root, trackerFolder: '' })?.signature;
-    const edited = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(390, 33)]);
+    const edited = await workbook('updated');
     const headers = { Origin: 'http://localhost:59413', 'Content-Type': MIME, 'X-Tracker-Signature': encodeURIComponent(oldSignature ?? '') };
     const response = await fetch(`${server.origin}${SAVE_PATH}`, { method: 'PUT', headers, body: edited });
     expect(response.status).toBe(200);
@@ -49,6 +57,23 @@ test('real XLSX is atomically updated and one original backup is created', async
     expect(another.status).toBe(200);
     expect(readFileSync(`${workbook}.tracker-viewer-original.bak`)).toEqual(zipped);
     expect(readdirSync(join(root, 'public')).some(file => file.endsWith('.tmp'))).toBe(false);
+  } finally { await server.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('an upload that changes merged ranges is refused without overwriting the original', async () => {
+  const { root, workbook: filename } = fixture();
+  const server = await serve(root);
+  try {
+    const signature = latestTracker({ root, cwd: root, trackerFolder: '' })?.signature ?? '';
+    const zip = await JSZip.loadAsync(zipped);
+    const sheet = await zip.file('xl/worksheets/sheet1.xml')!.async('string');
+    zip.file('xl/worksheets/sheet1.xml', sheet.replace('D4:E4', 'D4:F4'));
+    const altered = Buffer.from(await zip.generateAsync({ type: 'uint8array' }));
+    const headers = { Origin: ORIGIN, 'Content-Type': MIME, 'X-Tracker-Signature': encodeURIComponent(signature) };
+    const response = await fetch(`${server.origin}${SAVE_PATH}`, { method: 'PUT', headers, body: altered });
+    expect(response.status).toBe(409);
+    expect(readFileSync(filename)).toEqual(zipped);
+    expect(existsSync(`${filename}.tracker-viewer-original.bak`)).toBe(false);
   } finally { await server.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
