@@ -45,7 +45,7 @@ export function changed(): void {
 export function canDiscard(): boolean {
   return !state.dirty || window.confirm('Replace this workspace with another tracker? Export first if you need an Excel copy.');
 }
-window.addEventListener('beforeunload', event => {
+if (typeof window !== 'undefined') window.addEventListener('beforeunload', event => {
   if (state.dirty && !state.autosave) { event.preventDefault(); event.returnValue = ''; }
 });
 

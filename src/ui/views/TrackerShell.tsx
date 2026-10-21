@@ -33,7 +33,7 @@ export function TrackerShell() {
             <div className="top-actions">
               <label className="autosave-control" title="Automatically save an editable draft in this browser">
     <span>Auto-save</span>
-    <input type="checkbox" id="autosave-toggle" role="switch" checked />
+    <input type="checkbox" id="autosave-toggle" role="switch" defaultChecked />
     <span className="toggle-track">
     </span>
     </label>
