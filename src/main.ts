@@ -20,6 +20,8 @@ let loadedFromRuntime = false;
 let followLatest = true;
 let checkingRuntime = false;
 let saveError = '';
+let diffSequence = 0;
+const diffCache = new Map<string, typeof state.sheets>();
 const runtimeButton = $('#runtime-update') as HTMLButtonElement;
 
 function showSaveStatus(): void {
@@ -180,8 +182,69 @@ function handleError(error: unknown): void {
   notify(error instanceof Error ? error.message : String(error), true);
 }
 
+/** Diff workbooks are parsed into separate read-only snapshots, never setTrackers(). */
+async function chooseDiffFile(filename: string): Promise<void> {
+  const selected = state.diffSelected;
+  const existing = selected.indexOf(filename);
+  state.diffSelected = existing >= 0 ? selected.filter(item => item !== filename)
+    : selected.length === 2 ? [filename] : [...selected, filename];
+  state.diffWorkbooks = [];
+  state.diffFromSheet = 0;
+  state.diffToSheet = 0;
+  state.diffError = '';
+  const generation = ++diffSequence;
+  state.diffLoading = state.diffSelected.length === 2;
+  render();
+  if (!state.diffLoading) return;
+  try {
+    const entries = await Promise.all(state.diffSelected.map(async name => {
+      const manifest = state.folderFiles.find(item => item.filename === name);
+      if (!manifest) throw new Error(`Workbook ${name} is no longer in TRACKER_FOLDER.`);
+      let sheets = diffCache.get(manifest.signature);
+      if (!sheets) {
+        const source = await loadRuntimeFile(manifest);
+        sheets = await importWorkbook(source.file);
+        diffCache.set(manifest.signature, sheets);
+      }
+      return { filename: name, sheets };
+    }));
+    if (generation !== diffSequence || !state.diffMode) return;
+    state.diffWorkbooks = entries;
+    state.diffFromSheet = Math.max(0, (entries[0]?.sheets.length ?? 1) - 1);
+    state.diffToSheet = Math.max(0, (entries[1]?.sheets.length ?? 1) - 1);
+  } catch (error) {
+    if (generation !== diffSequence || !state.diffMode) return;
+    state.diffError = error instanceof Error ? error.message : String(error);
+  } finally {
+    if (generation === diffSequence) {
+      state.diffLoading = false;
+      render();
+    }
+  }
+}
+function toggleDiffMode(enabled: boolean): void {
+  state.diffMode = enabled;
+  ++diffSequence;
+  state.diffSelected = [];
+  state.diffWorkbooks = [];
+  state.diffLoading = false;
+  state.diffError = '';
+  render();
+  if (enabled) void refreshFolderPills();
+}
+function chooseDiffSheet(side: 'from' | 'to', index: number): void {
+  const entry = state.diffWorkbooks[side === 'from' ? 0 : 1];
+  if (!entry || !Number.isInteger(index) || index < 0 || index >= entry.sheets.length) return;
+  if (side === 'from') state.diffFromSheet = index;
+  else state.diffToSheet = index;
+  render();
+}
+
 state.autosave = autosavePreference();
-setupUI(filename => { void openFolderPill(filename); });
+setupUI(filename => {
+  if (state.diffMode) { void chooseDiffFile(filename); return; }
+  void openFolderPill(filename);
+}, toggleDiffMode, chooseDiffSheet);
 showSaveStatus();
 const toggle = $('#autosave-toggle') as HTMLInputElement;
 toggle.checked = state.autosave;
