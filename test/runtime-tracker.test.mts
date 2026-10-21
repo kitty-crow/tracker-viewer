@@ -42,3 +42,17 @@ test('prefers .env beside the executable and supports public beside the EXE', ()
     expect(trackerDirectory({ exeDir, cwd: root, trackerFolder: '' })).toBe(join(exeDir, 'public'));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('finds project public workbook when executable runs from release directory', () => {
+  const root = mkdtempSync(join(tmpdir(), 'tracker-release-'));
+  try {
+    const exeDir = join(root, 'release');
+    const publicDir = join(root, 'public');
+    mkdirSync(exeDir);
+    mkdirSync(publicDir);
+    writeFileSync(join(root, '.env'), 'TRACKER_FOLDER="./public"\\n');
+    writeFileSync(join(publicDir, 'Weekly.xlsx'), 'workbook');
+    expect(latestTracker({ root: exeDir, exeDir, cwd: exeDir, trackerFolder: '' })?.filename)
+      .toBe('Weekly.xlsx');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
