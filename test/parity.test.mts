@@ -43,8 +43,8 @@ class FrontendParityContract {
    * shutdown-message rule, which is appended after the legacy layout rules.
    */
   static legacyStyles(): string {
-    const base = readFileSync('styles/base.css', 'utf8');
-    const layout = readFileSync('styles/layout.css', 'utf8');
+    const base = readFileSync('styles/base.css', 'utf8').replace(/\r\n/g, '\n');
+    const layout = readFileSync('styles/layout.css', 'utf8').replace(/\r\n/g, '\n');
     const addition = '/* Shutdown state is shown only after the local server confirms shutdown. */';
     expect(layout.includes(addition)).toBe(true);
     const oldCss = base + layout.slice(0, layout.indexOf(addition));
