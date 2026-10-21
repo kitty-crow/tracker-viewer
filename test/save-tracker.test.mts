@@ -10,14 +10,14 @@ import { latestTracker } from '../scripts/runtime-tracker.mts';
 const ORIGIN = 'http://127.0.0.1:59413';
 const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 // Use an actual XLSX-like ZIP structure: the writer must reject layout changes.
-async function workbook(value: string): Promise<Buffer> {
+async function makeWorkbook(value: string): Promise<Buffer> {
   const zip = new JSZip();
   zip.file('xl/workbook.xml', '<workbook><sheet name="Sheet2"/></workbook>');
   zip.file('xl/styles.xml', '<styleSheet><fonts count="1"/></styleSheet>');
   zip.file('xl/worksheets/sheet1.xml', `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="D4:D4"/><sheetData><row r="4" ht="42" customHeight="1"><c r="D4" s="2" t="inlineStr"><is><t>${value}</t></is></c></row></sheetData><mergeCells count="1"><mergeCell ref="D4:E4"/></mergeCells></worksheet>`);
   return Buffer.from(await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }));
 }
-const zipped = await workbook('original');
+const zipped = await makeWorkbook('original');
 
 function fixture(): { root: string; workbook: string } {
   const root = mkdtempSync(join(tmpdir(), 'tracker-saving-'));
@@ -44,18 +44,18 @@ test('real XLSX is atomically updated and one original backup is created', async
   const server = await serve(root);
   try {
     const oldSignature = latestTracker({ root, cwd: root, trackerFolder: '' })?.signature;
-    const edited = await workbook('updated');
+    const edited = await makeWorkbook('updated');
     const headers = { Origin: 'http://localhost:59413', 'Content-Type': MIME, 'X-Tracker-Signature': encodeURIComponent(oldSignature ?? '') };
-    const response = await fetch(`${server.origin}${SAVE_PATH}`, { method: 'PUT', headers, body: edited });
+    const response = await fetch(`${server.origin}${SAVE_PATH}`, { method: 'PUT', headers, body: Uint8Array.from(edited) });
     expect(response.status).toBe(200);
     const saved = await response.json() as { signature: string };
-    expect(readFileSync(workbook)).toEqual(edited);
-    expect(readFileSync(`${workbook}.tracker-viewer-original.bak`)).toEqual(zipped);
-    const rejected = await fetch(`${server.origin}${SAVE_PATH}`, { method: 'PUT', headers, body: edited });
+    expect(readFileSync(workbook).toString('hex')).toBe(edited.toString('hex'));
+    expect(readFileSync(`${workbook}.tracker-viewer-original.bak`).toString('hex')).toBe(zipped.toString('hex'));
+    const rejected = await fetch(`${server.origin}${SAVE_PATH}`, { method: 'PUT', headers, body: Uint8Array.from(edited) });
     expect(rejected.status).toBe(409);
-    const another = await fetch(`${server.origin}${SAVE_PATH}`, { method: 'PUT', headers: { ...headers, 'X-Tracker-Signature': encodeURIComponent(saved.signature) }, body: zipped });
+    const another = await fetch(`${server.origin}${SAVE_PATH}`, { method: 'PUT', headers: { ...headers, 'X-Tracker-Signature': encodeURIComponent(saved.signature) }, body: Uint8Array.from(zipped) });
     expect(another.status).toBe(200);
-    expect(readFileSync(`${workbook}.tracker-viewer-original.bak`)).toEqual(zipped);
+    expect(readFileSync(`${workbook}.tracker-viewer-original.bak`).toString('hex')).toBe(zipped.toString('hex'));
     expect(readdirSync(join(root, 'public')).some(file => file.endsWith('.tmp'))).toBe(false);
   } finally { await server.close(); rmSync(root, { recursive: true, force: true }); }
 });
@@ -72,7 +72,7 @@ test('an upload that changes merged ranges is refused without overwriting the or
     const headers = { Origin: ORIGIN, 'Content-Type': MIME, 'X-Tracker-Signature': encodeURIComponent(signature) };
     const response = await fetch(`${server.origin}${SAVE_PATH}`, { method: 'PUT', headers, body: altered });
     expect(response.status).toBe(409);
-    expect(readFileSync(filename)).toEqual(zipped);
+    expect(readFileSync(filename).toString('hex')).toBe(zipped.toString('hex'));
     expect(existsSync(`${filename}.tracker-viewer-original.bak`)).toBe(false);
   } finally { await server.close(); rmSync(root, { recursive: true, force: true }); }
 });
@@ -83,11 +83,11 @@ test('cross-origin and malformed content cannot overwrite the workbook', async (
   try {
     const signature = latestTracker({ root, cwd: root, trackerFolder: '' })?.signature;
     const headers = { Origin: 'https://unrelated.example', 'Content-Type': MIME, 'X-Tracker-Signature': encodeURIComponent(signature ?? '') };
-    const denied = await fetch(`${server.origin}${SAVE_PATH}`, { method: 'PUT', headers, body: zipped });
+    const denied = await fetch(`${server.origin}${SAVE_PATH}`, { method: 'PUT', headers, body: Uint8Array.from(zipped) });
     expect(denied.status).toBe(403);
     const malformed = await fetch(`${server.origin}${SAVE_PATH}`, { method: 'PUT', headers: { ...headers, Origin: ORIGIN }, body: Buffer.alloc(200) });
     expect(malformed.status).toBe(400);
-    expect(readFileSync(workbook)).toEqual(zipped);
+    expect(readFileSync(workbook).toString('hex')).toBe(zipped.toString('hex'));
     expect(existsSync(`${workbook}.tracker-viewer-original.bak`)).toBe(false);
   } finally { await server.close(); rmSync(root, { recursive: true, force: true }); }
 });

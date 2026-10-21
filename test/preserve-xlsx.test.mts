@@ -16,7 +16,7 @@ test('changing the date preserves merged ranges, row sizes, column sizes, styles
   zip.file('xl/worksheets/sheet1.xml', sheet);
   zip.file('xl/styles.xml', '<styleSheet><fonts count="3"/></styleSheet>');
   zip.file('xl/tables/table1.xml', '<table name="OriginalTable"/>');
-  const original = new File([await zip.generateAsync({ type: 'uint8array' })], 'Weekly Projects Tracker (2026-10-19).xlsx', { type: MIME });
+  const original = new File([await zip.generateAsync({ type: 'blob' })], 'Weekly Projects Tracker (2026-10-19).xlsx', { type: MIME });
   const old = blankTracker();
   old.meeting = [{ label: 'Meeting date and time', value: '19/10/2026, 14:00',
     _original: { sheet: 'Sheet2', cells: { label: 'B4', value: 'D4' } } }];
