@@ -46,6 +46,36 @@ exit 4
   if (run.status !== 0) throw new Error(run.stderr?.trim() || `Port replacement failed (exit code ${run.status ?? 'unknown'}).`);
 }
 
+/**
+ * Stop only a currently running binary whose full path exactly matches the
+ * release target. Windows prevents Bun from overwriting an executing EXE.
+ */
+export function stopRunningRelease(executable: string): void {
+  if (process.platform !== 'win32') return;
+  const script = `
+$ErrorActionPreference = 'Stop'
+$target = ${psLiteral(executable)}
+$name = ${psLiteral(basename(executable))}
+$filter = "Name = '$name'"
+$running = @(Get-CimInstance Win32_Process -Filter $filter -ErrorAction Stop | Where-Object { $_.ExecutablePath -ieq $target })
+foreach ($item in $running) { Stop-Process -Id $item.ProcessId -Force -ErrorAction Stop }
+for ($attempt = 0; $attempt -lt 40; $attempt++) {
+  $remaining = @(Get-CimInstance Win32_Process -Filter $filter -ErrorAction Stop | Where-Object { $_.ExecutablePath -ieq $target })
+  if ($remaining.Count -eq 0) { exit 0 }
+  Start-Sleep -Milliseconds 150
+}
+[Console]::Error.WriteLine('The previous Tracker Viewer instance did not exit.')
+exit 5
+`;
+  const result = spawnSync('powershell.exe', [
+    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script,
+  ], { windowsHide: true, encoding: 'utf8', timeout: 15000 });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(
+    result.stderr?.trim() || `Unable to stop running release executable (exit ${result.status ?? 'unknown'}).`,
+  );
+}
+
 export function shortcutContents(url: string): string {
   return `[InternetShortcut]\r\nURL=${url}\r\n`;
 }

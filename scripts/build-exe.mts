@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { stopRunningRelease } from './windows-control.mts';
 
 const root = resolve(import.meta.dir, '..');
 const dist = resolve(root, 'dist');
@@ -10,10 +11,13 @@ if (process.platform !== 'win32') {
   process.exit(0);
 }
 mkdirSync(release, { recursive: true });
+const executable = resolve(release, 'TrackerViewer.exe');
+// Windows locks a running EXE. Stop only this exact release binary, not other installations.
+stopRunningRelease(executable);
 const result = await Bun.build({
   entrypoints: [resolve(root, 'scripts', 'standalone.mts')],
   compile: {
-    outfile: resolve(release, 'TrackerViewer.exe'),
+    outfile: executable,
     assets: [dist],
     windows: {
       hideConsole: true,
