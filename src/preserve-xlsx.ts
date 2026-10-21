@@ -9,6 +9,8 @@ const XML_SPACE = 'http://www.w3.org/XML/1998/namespace';
 const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 interface Patch { sheet: string; address: string; text: string; urgent?: number[]; red?: boolean }
+type XmlDoc = NonNullable<ReturnType<DOMParser['parseFromString']>>;
+type XmlElement = ReturnType<XmlDoc['createElementNS']>;
 
 function identical(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -123,7 +125,7 @@ function worksheetTargets(workbook: string, relationships: string): Map<string, 
   return targets;
 }
 
-function appendRun(doc: ReturnType<DOMParser['parseFromString']>, parent: Node, text: string, red: boolean): void {
+function appendRun(doc: XmlDoc, parent: XmlElement, text: string, red: boolean): void {
   const run = doc.createElementNS(NS, 'r');
   if (red) {
     const props = doc.createElementNS(NS, 'rPr');
@@ -142,7 +144,7 @@ function appendRun(doc: ReturnType<DOMParser['parseFromString']>, parent: Node, 
 function applyToXml(xml: string, patches: Patch[]): string {
   const doc = xmlDocument(xml);
   const cells = doc.getElementsByTagNameNS(NS, 'c');
-  const byAddress = new Map<string, Element>();
+  const byAddress = new Map<string, XmlElement>();
   for (let i = 0; i < cells.length; i++) {
     const cell = cells.item(i);
     const address = cell?.getAttribute('r');
