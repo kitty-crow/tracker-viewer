@@ -121,7 +121,7 @@ let portRetries = 0;
 
 function isPortCollision(error: unknown): boolean {
   const typed = error as { code?: string; message?: string };
-  return typed?.code === 'EADDRINUSE' || /port\\s*\\d+\\s+in\\s+use|address already in use|failed to start server/i.test(typed?.message ?? String(error));
+  return typed?.code === 'EADDRINUSE' || /port\s*\d+\s+in\s+use|address already in use|failed to start server/i.test(typed?.message ?? String(error));
 }
 
 function onStarted(): void {
