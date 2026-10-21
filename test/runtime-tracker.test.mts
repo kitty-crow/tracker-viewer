@@ -50,7 +50,7 @@ test('finds project public workbook when executable runs from release directory'
     const publicDir = join(root, 'public');
     mkdirSync(exeDir);
     mkdirSync(publicDir);
-    writeFileSync(join(root, '.env'), 'TRACKER_FOLDER="./public"\\n');
+    writeFileSync(join(root, '.env'), 'TRACKER_FOLDER="./public"\n');
     writeFileSync(join(publicDir, 'Weekly.xlsx'), 'workbook');
     expect(latestTracker({ root: exeDir, exeDir, cwd: exeDir, trackerFolder: '' })?.filename)
       .toBe('Weekly.xlsx');
