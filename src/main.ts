@@ -3,6 +3,7 @@ import { canWriteFile, chooseWritableFile, connectFolder, loadConnectedFolder, l
 import { canDiscard, setTrackers, state } from './state';
 import { autosavePreference, restoreDraft, saveDraft, setAutosavePreference } from './storage';
 import { exportWorkbook, importWorkbook } from './workbook';
+import { creationDate, newDatedWeek } from './types';
 import { notify, render, setupUI } from './ui';
 
 const $ = <T extends HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
@@ -168,6 +169,49 @@ quitButton.onclick = async () => {
     if (!response.ok) throw new Error('Could not stop the local server.');
     document.body.innerHTML = '<main style="font:16px system-ui;padding:3rem;max-width:40rem;margin:auto"><h1>Tracker Viewer stopped</h1><p>You can close this browser tab.</p></main>';
   } catch (error) { handleError(error); }
+};
+
+const newSheetButton = $('#new-sheet') as HTMLButtonElement;
+newSheetButton.onclick = async () => {
+  if (state.busy || newSheetButton.disabled) return;
+  if (!state.sourceSignature || fileHandle) {
+    notify('Automatic new weekly files require a tracker loaded from TRACKER_FOLDER. Open the tracker through Latest.', true);
+    return;
+  }
+  newSheetButton.disabled = true;
+  state.busy = true;
+  try {
+    if (pendingSave) { clearTimeout(pendingSave); pendingSave = undefined; }
+    if (state.dirty) {
+      if (!state.autosave) throw new Error('Save or export pending changes before creating a new weekly file.');
+      await persist();
+      if (state.dirty) throw new Error('The previous workbook has unsaved changes. Resolve its save error first.');
+    }
+    if (saveRunning) await saveRunning;
+    const date = new Date();
+    const next = newDatedWeek(state.tracker, date);
+    const blob = await exportWorkbook([next]);
+    const reply = await fetch('./__tracker/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'X-Tracker-Signature': encodeURIComponent(state.sourceSignature ?? ''),
+        'X-Tracker-Date': creationDate(date),
+      },
+      body: blob,
+    });
+    const created = await reply.json() as { filename?: string; signature?: string; modified?: number; error?: string };
+    if (!reply.ok || !created.filename || !created.signature) throw new Error(created.error ?? `File creation failed (${reply.status})`);
+    const workbook = new File([blob], created.filename, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      lastModified: created.modified ?? Date.now(),
+    });
+    const opened = await openSelection({ file: workbook, label: 'live folder: current weekly file', signature: created.signature }, false);
+    if (!opened) throw new Error(`Created ${created.filename}, but could not display it. Use Latest to open it.`);
+    notify(`Created ${created.filename} in TRACKER_FOLDER.`);
+    document.querySelector('#meeting')?.scrollIntoView({ behavior: 'smooth' });
+  } catch (error) { handleError(error); }
+  finally { state.busy = false; newSheetButton.disabled = false; }
 };
 
 $('#open-btn').onclick = async () => {

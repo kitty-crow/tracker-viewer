@@ -1,4 +1,4 @@
-import { bullet, FIELDS, HEADERS, lines, newId, newProject, nextWeek, sheetLabel, type Field, type MiscItem, type NoteField, type Project, type Section, type AgendaItem } from './types';
+import { bullet, FIELDS, HEADERS, lines, newId, newProject, sheetLabel, type Field, type MiscItem, type NoteField, type Project, type Section, type AgendaItem } from './types';
 import { changed, deleteSheet, selectSheet, state } from './state';
 const $ = <T extends HTMLElement>(selector: string): T => document.querySelector<T>(selector)!;
 const html = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]!));
@@ -230,7 +230,6 @@ export function setupUI():void {
   $('#filter-add').addEventListener('click',()=>{state.filters.push({id:++filterSequence,field:'all',value:''});renderFilters();$('#filters').querySelector<HTMLInputElement>('input:last-of-type')?.focus();});
   $('#meeting-add').onclick=()=>{state.tracker.meeting.push({label:'New field',value:''});changed();renderContent();};
   $('#agenda-add').onclick=()=>{state.tracker.agenda.push({id:newId(),number:String(state.tracker.agenda.length+1),topic:'',attendee:'',time:'',urgent:false});changed();renderContent();};
-  $('#new-sheet').onclick=()=>{const next=nextWeek(state.tracker);state.sheets.push(next);selectSheet(state.sheets.length-1);changed();render();document.querySelector('#meeting')?.scrollIntoView({behavior:'smooth'});};
   $('#delete-sheet').onclick=()=>{
     if (state.sheets.length <= 1) return;
     const name=sheetLabel(state.tracker,state.activeSheet);

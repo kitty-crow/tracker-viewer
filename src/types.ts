@@ -37,24 +37,28 @@ export function cleanText(v: unknown): string {
   if (obj.result !== undefined) return cleanText(obj.result);
   return String(v);
 }
-/** Duplicate a weekly tracker while keeping the previous week's items intact. */
-export function nextWeek(previous: Tracker): Tracker {
+/** Date the new weekly workbook for the local calendar day it is created. */
+export function creationDate(now = new Date()): string {
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/** Duplicate the previous tracker without advancing to an assumed Monday. */
+export function newDatedWeek(previous: Tracker, now = new Date()): Tracker {
   const next: Tracker = structuredClone(previous);
   next.projects.forEach(p => { p.id = newId(); });
   next.misc.forEach(m => { m.id = newId(); });
   next.agenda.forEach(a => { a.id = newId(); });
   const field = next.meeting.find(m => /meeting date( and time)?/i.test(m.label));
-  const existing = field?.value ?? '';
-  const uk = existing.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(.*)$/);
-  const iso = existing.match(/^(\d{4})-(\d\d)-(\d\d)(.*)$/);
-  let date = new Date();
-  date.setDate(date.getDate() + 7);
-  if (uk) date = new Date(Date.UTC(Number(uk[3]), Number(uk[2]) - 1, Number(uk[1]) + 7));
-  if (iso) date = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]) + 7));
-  const dd = String(date.getUTCDate()).padStart(2, '0');
-  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const yyyy = String(date.getUTCFullYear());
-  const value = iso ? `${yyyy}-${mm}-${dd}${iso[4]}` : `${dd}/${mm}/${yyyy}${uk?.[4] ?? ', 14:00'}`;
+  const oldValue = field?.value ?? '';
+  const iso = oldValue.match(/^\d{4}-\d{2}-\d{2}(.*)$/);
+  const uk = oldValue.match(/^\d{1,2}\/\d{1,2}\/\d{4}(.*)$/);
+  const date = creationDate(now);
+  const [year, month, day] = date.split('-');
+  const value = iso ? `${date}${iso[1] ?? ''}`
+    : `${day}/${month}/${year}${uk?.[1] ?? ', 14:00'}`;
   if (field) field.value = value;
   else next.meeting.unshift({ label: 'Meeting date and time', value });
   return next;

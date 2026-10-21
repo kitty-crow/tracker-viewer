@@ -65,3 +65,7 @@ The **Auto-save** toggle is on by default and now performs real, asynchronous fi
 **Open file** and **Connect folder** in Chrome/Edge request the File System Access API write permission and can save the selected file directly. A legacy file upload picker is read-only and cannot write to the source; the app explicitly warns about this rather than claiming Excel was saved. Browser storage still holds a recovery draft, not the primary copy. Files already open in Excel may be locked, in which case the write fails visibly and the recovery draft remains.
 
 **New sheet** adds a worksheet to the opened `.xlsx`; **Delete sheet** removes that worksheet from the same file after confirmation. These actions do not create independent `.xlsx` files. Export is still available to download a separate workbook copy.
+
+## Starting a new weekly workbook
+
+**New sheet** duplicates the current week's data and uses the date on which you click it (your computer's local date), not the next Monday. It creates a **new Excel file** in `TRACKER_FOLDER` using the current workbook's name, for example `Weekly Projects Tracker (2026-10-21).xlsx`. The previous file is not modified by creating a new week. If the dated filename already exists, a numbered suffix is added rather than overwriting it. The newly created file becomes the active auto-save target. This automatic file creation requires the active workbook to have been opened from the configured server folder (use **Latest**); a browser-only file picker cannot create a sibling file without additional folder access.

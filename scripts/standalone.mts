@@ -5,6 +5,7 @@ import { handleTrackerRequest } from './runtime-tracker.mts';
 import { openShortcut, replaceExistingViewer } from './windows-control.mts';
 import { listenerConfig } from './server-config.mts';
 import { handleSaveRequest, SAVE_PATH, trustedOrigin } from './save-tracker.mts';
+import { handleCreateRequest, CREATE_PATH } from './create-tracker.mts';
 
 const executableDir = dirname(process.execPath);
 const standalone = Bun.isStandaloneExecutable;
@@ -88,6 +89,10 @@ function handleAppRequest(req: IncomingMessage, res: ServerResponse): boolean {
 }
 
 const server = createServer((req, res) => {
+  if (new URL(req.url ?? '/', settings.browserUrl).pathname === CREATE_PATH) {
+    void handleCreateRequest(req, res, standalone ? { root: appRoot, exeDir: executableDir } : { root: appRoot }, new URL(settings.browserUrl).origin);
+    return;
+  }
   if (new URL(req.url ?? '/', settings.browserUrl).pathname === SAVE_PATH) {
     void handleSaveRequest(req, res, standalone ? { root: appRoot, exeDir: executableDir } : { root: appRoot }, new URL(settings.browserUrl).origin);
     return;
