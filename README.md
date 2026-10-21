@@ -16,6 +16,24 @@ You can also use `bun run build` directly. If that exact `release/TrackerViewer.
 
 To run the app without packaging, build the frontend first and use `bun run start`. For frontend development use `bun run dev`.
 
+## Diff mode: compare weekly workbooks
+
+Click **Diff mode** in the left sidebar. Click a dated pill once to choose the
+**From** (baseline) workbook, then another pill for the **To** workbook. The
+read-only comparison groups additions (+), removals (−) and edits (− old,
++ new) into Projects & enquiries, Middle East region, Miscellaneous, Agenda
+and Meeting details. Changes inside multiline notes are compared line by
+line, so unchanged bullets are not repeated. Existing project rows are
+matched by unique project number or descriptive identities; moving a row
+does not count as a change. New rows with no reliable identity may appear
+as a removal and addition instead of an edit.
+
+If either XLSX has multiple worksheets, choose which worksheet to compare
+in its dropdown. Clicking a selected pill deselects it; after choosing two,
+clicking a third starts a new comparison. The app only reads these files:
+it never changes the open editing workbook or its auto-save destination.
+Disable Diff mode to return to ordinary editing.
+
 ## Browse every weekly workbook in the tracker folder
 
 The pill bar lists **all** `.xlsx` workbooks directly inside `TRACKER_FOLDER` (excluding Excel `~# Tracker Viewer
