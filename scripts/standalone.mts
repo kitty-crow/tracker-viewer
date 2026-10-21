@@ -4,7 +4,7 @@ import { dirname, extname, join, resolve, sep } from 'node:path';
 import { handleTrackerRequest } from './runtime-tracker.mts';
 import { openShortcut, replaceExistingViewer } from './windows-control.mts';
 import { listenerConfig } from './server-config.mts';
-import { handleSaveRequest, SAVE_PATH } from './save-tracker.mts';
+import { handleSaveRequest, SAVE_PATH, trustedOrigin } from './save-tracker.mts';
 
 const executableDir = dirname(process.execPath);
 const standalone = Bun.isStandaloneExecutable;
@@ -75,7 +75,7 @@ function handleAppRequest(req: IncomingMessage, res: ServerResponse): boolean {
   }
   if (pathname !== '/__app/quit') return false;
   if (req.method !== 'POST') { res.writeHead(405, { Allow: 'POST' }).end(); return true; }
-  const sameOrigin = req.headers.origin === new URL(settings.browserUrl).origin;
+  const sameOrigin = trustedOrigin(req.headers.origin, new URL(settings.browserUrl).origin);
   const json = req.headers['content-type']?.split(';')[0] === 'application/json';
   if (!sameOrigin || !json) { res.writeHead(403).end('Forbidden'); return true; }
   res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })

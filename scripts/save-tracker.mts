@@ -12,6 +12,21 @@ const MAX_BYTES = 100 * 1024 * 1024;
 const MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 let writing = false;
 
+/**
+ * Both 127.0.0.1 and localhost address the loopback service, but browsers
+ * send different Origin values for them. Trust only the configured origin and
+ * its exact loopback alias at the same port. Never accept arbitrary websites.
+ */
+export function trustedOrigin(origin: string | undefined, configuredOrigin: string): boolean {
+  if (!origin) return false;
+  if (origin === configuredOrigin) return true;
+  const address = new URL(configuredOrigin);
+  if (address.protocol !== 'http:' || !address.port) return false;
+  if (address.hostname !== '127.0.0.1' && address.hostname !== 'localhost') return false;
+  const alias = address.hostname === '127.0.0.1' ? 'localhost' : '127.0.0.1';
+  return origin === `http://${alias}:${address.port}`;
+}
+
 function response(res: ServerResponse, status: number, message: string): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
     .end(JSON.stringify({ error: message }));
@@ -31,7 +46,7 @@ export async function handleSaveRequest(
   req: IncomingMessage, res: ServerResponse, options: ScannerOptions, allowedOrigin: string,
 ): Promise<void> {
   if (req.method !== 'PUT') { response(res, 405, 'PUT required'); return; }
-  if (req.headers.origin !== allowedOrigin || req.headers['content-type']?.split(';')[0] !== MIME) {
+  if (!trustedOrigin(req.headers.origin, allowedOrigin) || req.headers['content-type']?.split(';')[0] !== MIME) {
     response(res, 403, 'Same-origin Excel write required'); return;
   }
   const encoded = req.headers['x-tracker-signature'];

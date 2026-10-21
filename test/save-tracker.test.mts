@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
-import { handleSaveRequest, SAVE_PATH } from '../scripts/save-tracker.mts';
+import { handleSaveRequest, SAVE_PATH, trustedOrigin } from '../scripts/save-tracker.mts';
 import { latestTracker } from '../scripts/runtime-tracker.mts';
 
 const ORIGIN = 'http://127.0.0.1:59413';
@@ -37,7 +37,7 @@ test('real XLSX is atomically updated and one original backup is created', async
   try {
     const oldSignature = latestTracker({ root, cwd: root, trackerFolder: '' })?.signature;
     const edited = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(390, 33)]);
-    const headers = { Origin: ORIGIN, 'Content-Type': MIME, 'X-Tracker-Signature': encodeURIComponent(oldSignature ?? '') };
+    const headers = { Origin: 'http://localhost:59413', 'Content-Type': MIME, 'X-Tracker-Signature': encodeURIComponent(oldSignature ?? '') };
     const response = await fetch(`${server.origin}${SAVE_PATH}`, { method: 'PUT', headers, body: edited });
     expect(response.status).toBe(200);
     const saved = await response.json() as { signature: string };
@@ -65,4 +65,15 @@ test('cross-origin and malformed content cannot overwrite the workbook', async (
     expect(readFileSync(workbook)).toEqual(zipped);
     expect(existsSync(`${workbook}.tracker-viewer-original.bak`)).toBe(false);
   } finally { await server.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('save origin guard accepts only configured address and its loopback alias on the same port', () => {
+  expect(trustedOrigin('http://localhost:59413', ORIGIN)).toBe(true);
+  expect(trustedOrigin(ORIGIN, ORIGIN)).toBe(true);
+  expect(trustedOrigin('http://127.0.0.1:59413', 'http://localhost:59413')).toBe(true);
+  expect(trustedOrigin('http://localhost:59414', ORIGIN)).toBe(false);
+  expect(trustedOrigin('http://unrelated.example:59413', ORIGIN)).toBe(false);
+  expect(trustedOrigin('https://localhost:59413', ORIGIN)).toBe(false);
+  expect(trustedOrigin(undefined, ORIGIN)).toBe(false);
+  expect(trustedOrigin('http://localhost:59413', 'http://192.168.1.42:59413')).toBe(false);
 });
